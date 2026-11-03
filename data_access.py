@@ -13,6 +13,7 @@ from uuid import UUID
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from core.warehouse_tma_assembly import assemble_tma_from_warehouse
 
 
@@ -35,14 +36,80 @@ def get_db() -> DbHandle:
         raise RuntimeError("Read-only warehouse connection has not been configured.")
     if not (url.startswith("postgresql+psycopg://") or url.startswith("postgresql://")):
         raise ValueError("Only PostgreSQL read-only URLs are supported.")
+    parsed = make_url(url)
+    # A public Streamlit app must NEVER accept the database owner, postgres or
+    # another privileged role. The username suffix is required by Supavisor.
+    expected_names = {
+        "cma_on_the_go_reader",
+        "cma_on_the_go_reader.fbdnizwixnkcybjbwosf",
+    }
+    if parsed.username not in expected_names:
+        raise ValueError("Only the dedicated cma_on_the_go_reader database login is permitted.")
+    if parsed.query.get("sslmode") not in ("require", "verify-ca", "verify-full"):
+        raise ValueError("The database connection must require TLS (sslmode=require).")
+    if parsed.host is None or not (
+        parsed.host.endswith(".pooler.supabase.com")
+        or parsed.host == "db.fbdnizwixnkcybjbwosf.supabase.co"
+    ):
+        raise ValueError("Connection host must belong to the configured Supabase database.")
     engine = create_engine(
         url,
         pool_pre_ping=True,
         pool_size=2,
-        max_overflow=1,
-        connect_args={"options": "-c default_transaction_read_only=on -c statement_timeout=12000"},
+        max_overflow=0,
+        connect_args={
+            "options": "-c default_transaction_read_only=on -c statement_timeout=12000",
+            "connect_timeout": 10,
+        },
     )
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text("""
+                SELECT current_user AS role_name,
+                       current_setting('transaction_read_only') AS read_only,
+                       r.rolsuper, r.rolcreaterole, r.rolcreatedb,
+                       r.rolreplication, r.rolbypassrls,
+                       has_table_privilege(current_user,'warehouse.projects','INSERT') AS can_insert_projects,
+                       has_table_privilege(current_user,'warehouse.projects','UPDATE') AS can_update_projects,
+                       has_table_privilege(current_user,'warehouse.projects','DELETE') AS can_delete_projects,
+                       has_schema_privilege(current_user,'warehouse','CREATE') AS can_create_in_warehouse
+                  FROM pg_roles r WHERE r.rolname=current_user
+            """)).mappings().one()
+            if row["role_name"] != "cma_on_the_go_reader" or row["read_only"] != "on":
+                raise PermissionError("Warehouse connection is not using the approved read-only identity.")
+            forbidden = ("rolsuper","rolcreaterole","rolcreatedb","rolreplication","rolbypassrls",
+                         "can_insert_projects","can_update_projects","can_delete_projects",
+                         "can_create_in_warehouse")
+            if any(bool(row[key]) for key in forbidden):
+                raise PermissionError("Warehouse login has permissions beyond the approved read-only scope.")
+    except Exception:
+        engine.dispose()
+        raise
     return DbHandle(engine)
+
+
+def connection_check() -> dict:
+    """Verify the mobile reader can see each required relation (no user data returned)."""
+    required = (
+        "public.builders", "public.communities", "public.plans",
+        "public.plan_versions", "warehouse.projects",
+        "warehouse.project_workspace_state", "warehouse.properties",
+        "warehouse.listings", "warehouse.listing_snapshots",
+        "warehouse.transactions", "warehouse.transaction_observations",
+        "warehouse.canonical_transaction_observations",
+        "warehouse.inventory_current_state",
+    )
+    with get_db().engine.connect() as conn:
+        missing = [
+            name for name in required
+            if not conn.execute(
+                text("select has_table_privilege(current_user, :relation, 'SELECT')"),
+                {"relation": name},
+            ).scalar_one()
+        ]
+        if missing:
+            raise PermissionError("Read-only role is missing SELECT privileges on " + ", ".join(missing))
+        return {"reader_verified": True, "required_objects_checked": len(required)}
 
 
 def _rows(sql: str, params: dict | None = None) -> list[dict]:
