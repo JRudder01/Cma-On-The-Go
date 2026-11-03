@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import text
 
-from product_classifier import broad_property_bucket, classify_tma_product
+from core.product_classifier import broad_property_bucket, classify_tma_product
 
 
 _SNAPSHOT_SCHEMA_CACHE: dict[str, bool] = {}
