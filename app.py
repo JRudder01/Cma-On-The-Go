@@ -48,11 +48,5 @@ if not st.session_state.get("authorized", False):
             st.error("Incorrect passphrase.")
     st.stop()
 
-# Temporary post-auth diagnostic: no app imports or database reads.
-st.title("CMA On The Go")
-st.success("Password authentication and Streamlit rendering succeeded.")
-st.caption("The full analytical interface is temporarily disconnected for startup diagnosis.")
-st.write("No database connection has been opened.")
-if st.button("Sign out and retest"):
-    st.session_state["authorized"] = False
-    st.rerun()
+# Authentication succeeded. Render the protected field application.
+from mobile_app import *  # noqa: E402,F401,F403
