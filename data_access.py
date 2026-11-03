@@ -22,7 +22,7 @@ class DbHandle:
 
 
 def configured() -> bool:
-    return bool(st.secrets.get("READONLY_DATABASE_URL", ""))
+    try:\n        return bool(st.secrets.get("READONLY_DATABASE_URL", ""))\n    except Exception:\n        return False
 
 
 @st.cache_resource(show_spinner=False)
@@ -125,6 +125,6 @@ def run_tma(mode: str, location: dict, product_types: list[str],
     if (end - start).days > 3650:
         raise ValueError("Analysis period is too long.")
     return assemble_tma_from_warehouse(
-        get_db(), mode=mode, location=location, property_types=product_types,
+        get_db(), mode=mode, location=location, property_types=[],  # Warehouse selector uses broad buckets; filter exact TMA class in UI.
         period_start=start, period_end=end, active_max_age_days=active_age
     )
