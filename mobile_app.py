@@ -18,6 +18,11 @@ from core.outlier_engine import analyze_tma_outliers
 from core.trend_model import fit_resale_trend, trend_points
 from data_access import configured, connection_check, current_plans, list_projects, load_project, run_tma, search_communities
 
+
+def warehouse_ready() -> bool:
+    """Never run database reads just because a tab or expander was rendered."""
+    return configured() and bool(st.session_state.get("warehouse_connection_verified", False))
+
 st.markdown("""<style>
 .block-container{max-width:900px;padding-top:1.25rem;padding-left:1rem;padding-right:1rem;padding-bottom:5rem}
 h1{font-size:1.85rem!important;letter-spacing:-.045em} h2{font-size:1.3rem!important}
@@ -226,16 +231,19 @@ def market_lens(result, draft, plans):
 def project_view():
     st.subheader("Saved desktop projects")
     st.caption("Read-only: loading a project will not normalize, update, or resave its desktop state.")
-    if not configured():
+    if not warehouse_ready():
         st.info("Connect a restricted read-only warehouse credential to list existing projects.")
         return
     term=st.text_input("Search project or city",placeholder="Search saved analyses…")
-    try:
-        records=list_projects(term)
-    except Exception as exc:
-        st.error(clean_error(exc));return
+    if st.button("Search saved projects", key="search_saved_projects"):
+        try:
+            with st.spinner("Retrieving saved projects…"):
+                st.session_state["saved_project_rows"] = list_projects(term)
+        except Exception as exc:
+            st.error(clean_error(exc))
+    records=st.session_state.get("saved_project_rows", [])
     if not records:
-        st.info("No matching projects.")
+        st.caption("Use Search saved projects to load the matching list.")
         return
     labels={f"{p['name']} · {p.get('city') or 'Unknown city'} · {str(p['id'])[:8]}":p["id"] for p in records}
     pick=st.selectbox("Select project",list(labels))
@@ -266,14 +274,19 @@ def project_view():
 def library_view():
     st.subheader("Community library")
     st.caption("Search existing, active new-home communities. All plan data is read-only.")
-    if not configured():
+    if not warehouse_ready():
         st.info("Connect the existing warehouse with a restricted read-only database credential.")
         return
     search=st.text_input("Community, builder or city",placeholder="Find a community…")
-    try: matches=search_communities(search,limit=75)
-    except Exception as exc: st.error(clean_error(exc));return
+    if st.button("Search community library", key="search_library"):
+        try:
+            with st.spinner("Retrieving communities…"):
+                st.session_state["community_search_rows"] = search_communities(search, limit=75)
+        except Exception as exc:
+            st.error(clean_error(exc))
+    matches=st.session_state.get("community_search_rows", [])
     if not matches:
-        st.info("No matching active communities.")
+        st.caption("Use Search community library to load matching communities.")
         return
     opts={f"{x['name']} — {x['builder']} · {x.get('city') or ''}":x for x in matches}
     selected=st.multiselect("Select communities to inspect",list(opts),max_selections=15)
@@ -283,12 +296,16 @@ def library_view():
             with st.expander(f"{record['name']} · {record['builder']}",expanded=len(chosen)==1):
                 st.caption(f"{record.get('city') or ''}, {record.get('state') or ''} · {record.get('product_type') or 'Product unspecified'}")
                 st.write(f"Recorded plans: {record.get('plan_count') or 0}")
-        try:
-            plans=current_plans([p["id"] for p in chosen])
-            if plans:
-                st.dataframe(pd.DataFrame(plans)[["community_id","name","sqft","base_price","last_verified_date"]],
-                    hide_index=True,use_container_width=True)
-        except Exception as exc: st.error(clean_error(exc))
+        if st.button("Show selected community plans", key="load_library_plans"):
+            try:
+                with st.spinner("Retrieving current plans…"):
+                    st.session_state["community_plan_rows"]=current_plans([p["id"] for p in chosen])
+            except Exception as exc:
+                st.error(clean_error(exc))
+        plans=st.session_state.get("community_plan_rows", [])
+        if plans:
+            st.dataframe(pd.DataFrame(plans)[["community_id","name","sqft","base_price","last_verified_date"]],
+                hide_index=True,use_container_width=True)
         if st.button("Use in Quick Scan",use_container_width=True):
             st.session_state["project_comm_ids"]=[int(x["id"]) for x in chosen]
             st.success("Competitor selections saved in this browser session.")
@@ -297,7 +314,7 @@ def library_view():
 def scan_view():
     st.subheader("Quick Market Scan")
     st.caption("Start with the MLS warehouse; adding a subject is optional.")
-    if not configured():
+    if not warehouse_ready():
         st.info("Warehouse connection is not yet configured. Build a scan definition below; live records will remain unavailable.")
     subject=st.session_state.get("draft_subject") or {}
     with st.expander("1 · Market area",expanded=True):
@@ -329,10 +346,16 @@ def scan_view():
         sf=st.number_input("Representative home size (SF)",min_value=0,max_value=30000,step=50,value=int(subject.get("sf") or 0))
         price=st.number_input("Representative asking price ($)",min_value=0,max_value=100000000,step=10000,value=int(subject.get("price") or 0))
     with st.expander("3 · Existing competitors",expanded=False):
-        if configured():
+        if warehouse_ready():
             q=st.text_input("Search communities",placeholder="Builder, community or city…")
+            if st.button("Find competitors", key="find_competitors"):
+                try:
+                    with st.spinner("Searching current communities…"):
+                        st.session_state["competitor_search_rows"]=search_communities(q,limit=100)
+                except Exception as exc:
+                    st.error(clean_error(exc))
+            found=list(st.session_state.get("competitor_search_rows", []))
             try:
-                found=search_communities(q,limit=100)
                 if mode=="Coordinates + radius" and location and found:
                     for p in found:
                         if p.get("latitude") is not None and p.get("longitude") is not None:
@@ -347,7 +370,7 @@ def scan_view():
         else: st.caption("Connect the read-only warehouse to search competitors.")
     if st.button("Analyze market",type="primary",use_container_width=True):
         st.session_state["draft_subject"]={"name":name,"sf":sf,"price":price}
-        if not configured():
+        if not warehouse_ready():
             st.warning("A read-only warehouse connection is required for live MLS analysis.")
         elif not location or (mode=="City + state" and (not city.strip() or not state.strip())) or (mode=="ZIP code" and len(location.get("zipCode",""))!=5):
             st.warning("Enter a valid market geography.")
