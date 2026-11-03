@@ -67,8 +67,15 @@ def subject_summary(draft):
     st.caption(f"{draft.get('mode','')} · {draft.get('start')} – {draft.get('end')} · MLS warehouse only")
 
 
+def monthly_pi(price: float, annual_rate: float, down_pct: float = 20.0) -> float:
+    principal = price * (1.0 - down_pct / 100.0)
+    rate = annual_rate / 1200.0
+    months = 360
+    return principal / months if rate == 0 else principal * rate / (1 - (1 + rate) ** (-months))
+
+
 def market_fig(frame: pd.DataFrame, model: dict | None, metric: str,
-               subject: dict, plans: list[dict]) -> go.Figure:
+               subject: dict, plans: list[dict], rate: float = 6.5, down_pct: float = 20.) -> go.Figure:
     fig = go.Figure()
     closed = frame[frame["Standard Status"].eq("Closed")].copy() if not frame.empty else pd.DataFrame()
     inventory = frame[frame["Standard Status"].isin(["Active","Pending"])].copy() if not frame.empty else pd.DataFrame()
@@ -110,6 +117,23 @@ def market_fig(frame: pd.DataFrame, model: dict | None, metric: str,
             except (ValueError, TypeError): continue
         fig.update_xaxes(title="Living area (SF)",fixedrange=False)
         fig.update_yaxes(title="Price ($)" if metric=="Price" else "Price per SF ($)",tickprefix="$",fixedrange=False)
+    elif metric == "Payment":
+        candidates = []
+        subject_price = float(subject.get("price") or 0)
+        if subject_price > 0:
+            candidates.append(("Subject", monthly_pi(subject_price,rate,down_pct)))
+        for p in plans[:15]:
+            try:
+                price = float(p["base_price"])
+                if price > 0:
+                    candidates.append((str(p.get("name") or "Plan")[:24], monthly_pi(price,rate,down_pct)))
+            except (TypeError,ValueError): pass
+        if candidates:
+            fig.add_trace(go.Bar(x=[x[0] for x in candidates],y=[x[1] for x in candidates],
+                                 marker_color=["#dc2626" if x[0]=="Subject" else "#0d9488" for x in candidates],
+                                 name="P&I estimate"))
+        fig.update_yaxes(title="Monthly principal + interest ($)",tickprefix="$",rangemode="tozero")
+        fig.update_xaxes(tickangle=-25)
     else:
         if not frame.empty:
             counts = frame.groupby("Standard Status").size().reindex(["Active","Pending","Closed"],fill_value=0)
@@ -160,11 +184,17 @@ def market_lens(result, draft, plans):
     b.metric("Inventory",int(df["Standard Status"].isin(["Active","Pending"]).sum()))
     c.metric("Model eligible",int(model["row_count"]) if model else 0)
     st.caption(f"Selected resale model: {chosen}. Outlier flags exclude {excluded} records across categories. No manual outlier review is available in mobile v0.1.")
-    metric=st.segmented_control("Chart",["Price","Price/SF","Inventory"],default="Price/SF")
+    metric=st.segmented_control("Chart",["Price","Price/SF","Inventory","Payment"],default="Price/SF")
     metric=metric or "Price/SF"
     # Keep visualization restricted to chosen product so one trend is not paired with other product groups.
     filtered=df[df["TMA Type"].eq(chosen)].copy()
-    fig=market_fig(filtered,model,metric,draft,plans)
+    rate=6.5
+    down_pct=20.0
+    if metric=="Payment":
+        rate=st.slider("Illustrative fixed mortgage rate (%)",3.0,12.0,6.5,0.125)
+        down_pct=st.slider("Down payment (%)",0,50,20,5)
+        st.caption("Current-price, 30-year principal-and-interest estimates only; NOT an historical payment trend, and excludes taxes, HOA, CFD, insurance, mortgage insurance and incentives.")
+    fig=market_fig(filtered,model,metric,draft,plans,rate,down_pct)
     st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":True})
     if st.button("⛶ Expand chart",use_container_width=True):
         expanded_chart(fig)
