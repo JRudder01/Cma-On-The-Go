@@ -22,7 +22,10 @@ class DbHandle:
 
 
 def configured() -> bool:
-    try:\n        return bool(st.secrets.get("READONLY_DATABASE_URL", ""))\n    except Exception:\n        return False
+    try:
+        return bool(st.secrets.get("READONLY_DATABASE_URL", ""))
+    except Exception:
+        return False
 
 
 @st.cache_resource(show_spinner=False)
