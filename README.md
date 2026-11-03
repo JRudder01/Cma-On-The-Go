@@ -67,3 +67,7 @@ Original analytical source copied **read-only** from `JRudder01/Rudder-Analytics
 - Allowed modifications: this **new repository only**, explicitly authorized for development.
 - Forbidden unless separately authorized: desktop CMA O' Matic repo, existing branches, existing Streamlit deployment, Supabase schemas, database roles, RLS settings, and all production warehouse/project data.
 - No real secrets, MLS CSVs, actual client project payloads, private addresses, or partner branding in public GitHub.
+
+## Shared Supabase integration
+
+A dedicated, narrowly scoped, **read-only** warehouse connection is prepared but deliberately inactive until the owner authorizes role creation and enters the credentials into Streamlit Secrets. See [Warehouse connection setup](docs/WAREHOUSE_CONNECTION_SETUP.md) for the SQL template, verification steps, and security boundaries. **Never use the desktop administrator DATABASE_URL.**
