@@ -34,7 +34,10 @@ def clean_error(exc: Exception) -> str:
 
 
 def authorize() -> None:
-    try:\n        password = st.secrets.get("ACCESS_PASSWORD", "")\n    except Exception:\n        password = ""
+    try:
+        password = st.secrets.get("ACCESS_PASSWORD", "")
+    except Exception:
+        password = ""
     if not isinstance(password, str) or len(password) < 14:
         st.title("CMA On The Go")
         st.info("This app is not activated. An administrator must configure an access password in Streamlit Secrets before use.")
