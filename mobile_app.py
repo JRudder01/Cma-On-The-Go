@@ -318,8 +318,8 @@ def scan_view():
                 if -90<=lat<=90 and -180<=lon<=180:
                     location={"latitude":lat,"longitude":lon,"radius":radius}
             except (ValueError,TypeError):pass
-        chosen_product=st.selectbox("Resale category",["SFD","Attached","Detached Condo"])
-        period=st.selectbox("Closed-sale period",["Last 12 months","Last 6 months","Last 24 months"],index=0)
+        chosen_product=st.radio("Resale category",["SFD","Attached","Detached Condo"],horizontal=True)
+        period=st.radio("Closed-sale period",["Last 12 months","Last 6 months","Last 24 months"],index=0,horizontal=True)
         days={"Last 6 months":183,"Last 12 months":365,"Last 24 months":730}[period]
         end=date.today()
         start=end-timedelta(days=days)
