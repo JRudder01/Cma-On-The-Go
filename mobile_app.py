@@ -16,7 +16,7 @@ import streamlit as st
 
 from core.outlier_engine import analyze_tma_outliers
 from core.trend_model import fit_resale_trend, trend_points
-from data_access import configured, current_plans, list_projects, load_project, run_tma, search_communities
+from data_access import configured, connection_check, current_plans, list_projects, load_project, run_tma, search_communities
 
 st.markdown("""<style>
 .block-container{max-width:900px;padding-top:1.25rem;padding-left:1rem;padding-right:1rem;padding-bottom:5rem}
@@ -379,7 +379,16 @@ authorize()
 st.title("CMA On The Go")
 st.caption("Mobile market intelligence · Companion to CMA O' Matic")
 if configured():
-    st.success("Warehouse credential configured · read-only operations only",icon="🔒")
+    st.info("Read-only warehouse settings found. Verify the connection before running market analyses.")
+    if st.button("Check secure warehouse connection", key="warehouse_health", use_container_width=True):
+        try:
+            status = connection_check()
+            st.session_state["warehouse_connection_verified"] = True
+            st.success(f"Verified dedicated read-only account and SELECT access to {status['required_objects_checked']} required objects.")
+        except Exception as exc:
+            st.session_state["warehouse_connection_verified"] = False
+            st.error(clean_error(exc))
+            st.caption("Confirm the reader role, TLS connection string, and SELECT grants in the setup guide.")
 else:
     st.warning("Read-only warehouse not connected. Project and MLS views are unavailable.")
 tabs=st.tabs(["📍 Quick Scan","📁 Projects","🏘️ Communities"])
