@@ -121,12 +121,13 @@ def test_payment_uses_current_rate_and_down_payment():
     assert b.y[0]>a.y[0]
 
 
-def test_plotly_touch_config_always_keeps_pan_and_removes_selection():
+def test_plotly_toolbar_zoom_keeps_pan_and_removes_selection_modes():
     from mobile_chart import _plotly_config
-    disabled=_plotly_config(False)
-    enabled=_plotly_config(True)
-    for cfg in (disabled,enabled):
-        assert set(["select2d","lasso2d"]).issubset(cfg["modeBarButtonsToRemove"])
-        assert cfg["displayModeBar"] is True
-    assert disabled["scrollZoom"] is False
-    assert enabled["scrollZoom"] is True
+    cfg=_plotly_config()
+    removed=cfg["modeBarButtonsToRemove"]
+    assert set(["select2d","lasso2d","zoom2d","pan2d"]).issubset(removed)
+    assert "zoomIn2d" not in removed
+    assert "zoomOut2d" not in removed
+    assert "resetScale2d" not in removed
+    assert cfg["scrollZoom"] is False
+    assert cfg["displayModeBar"] is True
