@@ -79,3 +79,42 @@ def test_unified_source_switch():
     source.set_value("Quick Scan").run()
     assert not app.exception
     assert any(h.value=="Quick Market Scan" for h in app.subheader)
+
+
+def test_price_player_reuses_plan_fields_and_applies_without_warehouse():
+    from datetime import date,timedelta
+    from types import SimpleNamespace
+    import pandas as pd
+    from quick_workspace import market_signature
+
+    app=AppTest.from_file(APP_ENTRY,default_timeout=30)
+    app.secrets["ACCESS_PASSWORD"]="local-test-only-password"
+    app.session_state["authorized"]=True
+    app.run()
+    count=next(w for w in app.number_input if w.label=="Number of subject plans")
+    count.set_value(1).run()
+    sf=next(w for w in app.number_input if w.label=="Home size (SF)")
+    sf.set_value(1600).run()
+
+    now=date.today()
+    signature=market_signature("City + state",{"city":"","state":"CA"},["SFD"],
+                               now-timedelta(days=365),now)
+    app.session_state["unified_quick_result"]={
+        "name":"TMA Carson","products":["SFD"],"signature":signature,
+        "result":SimpleNamespace(available=True,mls=pd.DataFrame())
+    }
+    app.session_state["unified_quick_draft"]={"name":"Test","subject_plans":[]}
+    app.session_state["unified_quick_price_models"]={"SFD":{
+        "automatic_pricing_eligible":True,"pricing_reliability":"Moderate",
+        "sf_min":1400.,"sf_max":2300.,"slope":350.,"intercept":150000.
+    }}
+    app.run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert any(w.label=="Reference trendline" for w in app.selectbox)
+    apply=next(w for w in app.button if w.label=="Apply prices to subject plans")
+    assert not apply.disabled
+    apply.click().run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    asking=next(w for w in app.number_input if w.label=="Asking price ($)")
+    assert asking.value==710000
+    assert app.session_state["unified_quick_draft"]["subject_plans"][0]["base_price"]==710000
