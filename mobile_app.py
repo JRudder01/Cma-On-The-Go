@@ -293,16 +293,20 @@ def saved_market_prefill(area: dict, project: dict) -> dict:
     if mode == "City + state" and (not fields["city"] or not fields["state"]):
         raise ValueError("The saved TMA does not contain a usable city and state.")
     product_types = area.get("property_types") or []
-    product_text = " ".join(str(v).lower() for v in product_types)
-    if "single family" in product_text and not ("condo" in product_text or "townhouse" in product_text):
-        fields["analysis_product"] = "SFD"
-    elif "townhouse" in product_text and "single family" not in product_text:
-        fields["analysis_product"] = "Attached"
-    elif "condo" in product_text and "single family" not in product_text:
-        fields["analysis_product"] = "Attached"
-    else:
-        fields["analysis_product"] = "SFD"
+    selected=[]
+    for raw in product_types:
+        label=str(raw).strip().lower()
+        if "single family" in label and "SFD" not in selected:
+            selected.append("SFD")
+        elif ("townhouse" in label or "condo" in label) and "Attached" not in selected:
+            selected.append("Attached")
+    if not selected:
+        selected=["SFD"]
         fields["product_review_needed"] = True
+    elif len(selected) < len(product_types):
+        fields["product_review_needed"] = True
+    fields["analysis_products"] = selected
+    fields["analysis_product"] = selected[0]
     return fields
 
 
@@ -508,7 +512,7 @@ def scan_view():
         st.caption("Resale categories · choose one or more")
         chosen_products=[
             category for category in product_options
-            if st.checkbox(category, value=(category == prefill.get("analysis_product","SFD")),
+            if st.checkbox(category, value=(category in prefill.get("analysis_products",[prefill.get("analysis_product","SFD")])),
                            key="scan_product_"+category.replace(" ","_").lower())
         ]
         saved_start = saved_end = None
