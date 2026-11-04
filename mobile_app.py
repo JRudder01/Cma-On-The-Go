@@ -42,7 +42,7 @@ def authorize() -> None:
         password = st.secrets.get("ACCESS_PASSWORD", "")
     except Exception:
         password = ""
-    if not isinstance(password, str) or len(password) < 14:
+    if not isinstance(password, str) or len(password) < 4:
         st.title("CMA On The Go")
         st.info("This app is not activated. An administrator must configure an access password in Streamlit Secrets before use.")
         st.caption("No shared warehouse connection is made and no market data is exposed.")
