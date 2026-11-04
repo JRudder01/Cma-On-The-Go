@@ -27,7 +27,7 @@ An **independent mobile-first Streamlit companion** to CMA O' Matic. This reposi
 1. Deploy this repository as a **separate** Streamlit app with entrypoint `app.py`.
 2. Open the new app's **Settings → Secrets** (not a public GitHub file). Set:
    ```toml
-   ACCESS_PASSWORD = "a-unique-private-passphrase-at-least-14-characters"
+   ACCESS_PASSWORD = "temporary-development-passphrase-at-least-4-characters"
    # Add only after the database and access scope are separately approved:
    # READONLY_DATABASE_URL = "postgresql+psycopg://restricted_reader:...@...:5432/postgres?sslmode=require"
    ```
@@ -71,3 +71,5 @@ Original analytical source copied **read-only** from `JRudder01/Rudder-Analytics
 ## Shared Supabase integration
 
 A dedicated, narrowly scoped, **read-only** warehouse connection is prepared but deliberately inactive until the owner authorizes role creation and enters the credentials into Streamlit Secrets. See [Warehouse connection setup](docs/WAREHOUSE_CONNECTION_SETUP.md) for the SQL template, verification steps, and security boundaries. **Never use the desktop administrator DATABASE_URL.**
+
+**Development-only warning:** The application currently accepts a 4-character minimum access passphrase for convenient testing. This is insufficient to protect private MLS/project data on a publicly reachable deployment. Use a strong, unique actual secret and replace this shared-passphrase gate with real user authentication before inviting external users. The shorter minimum does not change database credentials.
