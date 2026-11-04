@@ -232,7 +232,7 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
 
 @st.dialog("Expanded market view",width="large")
 def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines):
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":True})
+    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True})
     st.caption("Drag or pinch to zoom. Double-tap to reset.")
     community_key(draft,plans,lines)
 
@@ -252,7 +252,8 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         down=st.slider("Down payment (%)",0,50,20,5)
         st.caption("30-year principal and interest only. Excludes HOA, taxes, insurance and incentives.")
     fig,lines,diagnostics=make_chart(series,draft,plans,metric,rate,down)
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":True})
+    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True})
+    st.caption("Scroll the page normally; use the chart toolbar or drag to zoom. Double-click to reset.")
     if st.button("Expand chart",use_container_width=True,key="shared_expand_chart"):
         expanded_chart(fig,draft,plans,lines)
     community_key(draft,plans,lines)
