@@ -1,6 +1,9 @@
 """Saved desktop projects in one mobile chart; only read-only warehouse reads."""
 from __future__ import annotations
 from datetime import date,timedelta
+import re
+import pandas as pd
+from core.warehouse_tma_assembly import WarehouseTMAAssembly
 import streamlit as st
 from data_access import list_projects,load_project,run_tma,current_plans
 from mobile_chart import render_analysis
@@ -32,11 +35,25 @@ def saved_market_definition(area,project,item):
             raise ValueError("Saved city missing")
         loc={"city":city,"state":state}
     elif mode=="ZIP code":
-        zips=meta.get("zips") or []
-        code=str(area.get("zip_code") or area.get("zip_filter") or (zips[0] if zips else ""))
-        if not (len(code)==5 and code.isdigit()):
+        # Desktop TMAs can contain a comma-separated ZIP list and/or meta.zips.
+        # Keep all ZIPs in one TMA, instead of silently taking only the first.
+        tokens=[]
+        inputs=[area.get("zip_code"),area.get("zip_filter")]
+        extra=meta.get("zips") or []
+        inputs.extend(extra if isinstance(extra,(list,tuple)) else [extra])
+        for value in inputs:
+            if value in (None,""):
+                continue
+            for token in re.split(r"[,;|\\s]+",str(value).strip()):
+                if not token:
+                    continue
+                if not (len(token)==5 and token.isdigit()):
+                    raise ValueError("Saved ZIP missing or invalid")
+                if token not in tokens:
+                    tokens.append(token)
+        if not tokens:
             raise ValueError("Saved ZIP missing or invalid")
-        loc={"zipCode":code}
+        loc={"zipCode":tokens[0]} if len(tokens)==1 else {"zipCodes":tokens}
     elif mode=="Coordinates + radius":
         try:
             lat,lon=[float(v.strip()) for v in str(area.get("center_coordinates") or "").split(",")]
@@ -70,6 +87,37 @@ def saved_market_definition(area,project,item):
     return mode,loc,products,start,end
 
 
+
+def _run_saved_market(mode,location,products,start,end):
+    """Assemble a multi-ZIP desktop TMA using independent read-only ZIP scans."""
+    zips=location.get("zipCodes")
+    if mode!="ZIP code" or not zips:
+        return run_tma(mode,location,products,start,end)
+    results=[run_tma("ZIP code",{"zipCode":code},products,start,end)
+             for code in zips]
+    if any(not result.available for result in results):
+        raise ValueError("At least one ZIP in this saved TMA could not be assembled")
+    frames=[result.mls for result in results
+            if isinstance(result.mls,pd.DataFrame) and not result.mls.empty]
+    combined=pd.concat(frames,ignore_index=True) if frames else pd.DataFrame()
+    # ZIP areas in the canonical warehouse are mutually exclusive by property,
+    # but deduplicate a repeated analytical identity defensively.
+    if not combined.empty:
+        identity_cols=[col for col in
+                       ("Canonical Transaction ID","Canonical Listing ID",
+                        "Canonical Property ID","Standard Status")
+                       if col in combined.columns]
+        if identity_cols:
+            combined=combined.drop_duplicates(subset=identity_cols,
+                                              keep="first").reset_index(drop=True)
+    return WarehouseTMAAssembly(
+        rentcast=pd.DataFrame(),mls=combined,
+        stats={"read_only_multi_zip":list(zips),
+               "assembled_zip_count":len(zips)},
+        available=True,
+    )
+
+
 def project_series(item):
     state=item.get("state_json") or {}
     project=state.get("project") or {}
@@ -81,7 +129,7 @@ def project_series(item):
         if key not in cache:
             try:
                 mode,loc,products,start,end=saved_market_definition(area,project,item)
-                result=run_tma(mode,loc,products,start,end)
+                result=_run_saved_market(mode,loc,products,start,end)
                 if not result.available:
                     cache[key]={"error":"Warehouse assembly unavailable"}
                 else:
