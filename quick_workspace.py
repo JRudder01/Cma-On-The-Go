@@ -39,26 +39,38 @@ def subject_price_player(plans, signature):
         st.caption(f"Supported range: {model['sf_min']:,.0f}–{model['sf_max']:,.0f} SF "
                    f"· Reliability: {model.get('pricing_reliability','Eligible')}")
         proposals=price_proposals(plans,model,offset)
-        rows=[]
+        eligible=[p for p in proposals if "target_price" in p]
+        skipped=[p for p in proposals if "target_price" not in p]
+        st.caption(f"{len(eligible)} of {len(proposals)} subject plans qualify for this trendline.")
+        # Native vertical cards avoid a wide, horizontally scrolling dataframe
+        # on narrow phone screens and retain all price figures in view.
         for p in proposals:
-            rows.append({
-                "Plan":p["name"],
-                "SF":f"{p['sqft']:,.0f}",
-                "Existing":f"${p['existing_price']:,.0f}" if p["existing_price"] else "—",
-                "Trend":f"${p['trend_price']:,.0f}" if "trend_price" in p else "—",
-                "Suggested":f"${p['target_price']:,.0f}" if "target_price" in p else p.get("reason","Unavailable"),
-            })
-        st.dataframe(rows,hide_index=True,use_container_width=True)
-        blocked=any("target_price" not in p for p in proposals)
-        if blocked:
-            st.warning("At least one plan is outside the model's supported SF range. "
-                       "No prices will be applied until every plan is eligible.")
-        if st.button("Apply prices to subject plans",disabled=blocked,
-                     use_container_width=True,type="primary",key="unified_player_apply"):
+            with st.container(border=True):
+                st.write(f"**{p['name']}** · {p['sqft']:,.0f} SF")
+                existing=(f"${p['existing_price']:,.0f}"
+                          if p['existing_price']>0 else "Not entered")
+                if "target_price" in p:
+                    st.caption(f"Current: {existing} · Trend: ${p['trend_price']:,.0f}")
+                    st.write(f"**Suggested: ${p['target_price']:,.0f}** "
+                             f"({offset:+d}% versus trend)")
+                else:
+                    st.caption(f"Current: {existing}")
+                    st.write("**Not automatically priced**")
+                    st.caption(f"{p.get('reason','Not eligible')}. "
+                               "You can enter a price manually, or choose a different eligible trendline.")
+        if skipped:
+            st.info(f"{len(skipped)} plan(s) fall outside this model's supported "
+                    "range or cannot be priced automatically. They will be left "
+                    "unchanged; eligible plans can still be priced.")
+        label=f"Apply suggested prices to {len(eligible)} eligible plan(s)"
+        if st.button(label,disabled=not eligible,use_container_width=True,
+                     type="primary",key="unified_player_apply"):
+            # Only stage supported rows; keep manual prices on skipped plans.
             st.session_state["unified_pending_plan_prices"]={
-                plans[p["index"]]["input_index"]:int(p["target_price"]) for p in proposals
+                plans[p["index"]]["input_index"]:int(p["target_price"])
+                for p in eligible
             }
-            st.session_state["unified_player_applied"]=True
+            st.session_state["unified_player_applied"]=len(eligible)
             st.rerun()
         st.caption("Uses the existing plan sizes and the validated market model. "
                    "No new MLS query or desktop-project changes.")
@@ -83,8 +95,10 @@ def subject_inputs(signature: str):
     if previous.get("signature")==signature and st.session_state.get("unified_quick_draft"):
         st.session_state["unified_quick_draft"]["name"]=name
         st.session_state["unified_quick_draft"]["subject_plans"]=plans
-    if st.session_state.pop("unified_player_applied",False):
-        st.success("Suggested prices applied to your existing subject plan fields and chart.")
+    applied=st.session_state.pop("unified_player_applied",0)
+    if applied:
+        st.success(f"Applied suggested prices to {int(applied)} subject plan(s). "
+                   "Any unsupported plans were left unchanged.")
     return name,plans
 
 
