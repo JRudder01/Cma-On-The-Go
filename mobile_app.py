@@ -431,8 +431,16 @@ def project_view():
     b.metric("Competitors", len(competitors))
     c.metric("Subject plans", len(subject_plans))
     st.caption("Selected competitors are saved IDs from CMA O' Matic. Mobile searches current warehouse community/plan data.")
-    if st.button("Load in Quick Market Scan", key="load_saved_workbook",
+    if st.button("View saved project TMAs", key="open_desktop_project_view",
                  type="primary", use_container_width=True):
+        st.session_state["saved_project_view_id"]=item.get("id")
+        st.session_state["saved_project_selected_tma"]=0
+        st.session_state.pop("saved_project_chart",None)
+        st.session_state["pending_workspace"]="📊 Project View"
+        st.rerun()
+    st.caption("Or copy one TMA into an editable, single-market Quick Scan:")
+    if st.button("Load in Quick Market Scan", key="load_saved_workbook",
+                 use_container_width=True):
         try:
             load_saved_workbook_into_scan(item)
             st.rerun()
@@ -466,6 +474,83 @@ def project_view():
                 except (ValueError,TypeError) as exc:
                     st.error(f"Unable to load the selected TMA: {exc}")
     st.info("Saved desktop analyses are reference snapshots. Quick Scan rebuilds a new result from currently available canonical MLS records; it does not reproduce custom MLS data, saved outlier edits, or historical pricing results.")
+
+def saved_project_view():
+    """Multi-TMA project exploration. No warehouse writes or batch data loads."""
+    st.subheader("Saved Project")
+    item=st.session_state.get("desktop_project")
+    if not item or str(item.get("id") or "") != str(st.session_state.get("saved_project_view_id") or ""):
+        st.info("Open a saved workbook in Projects to view its TMAs.")
+        if st.button("Go to Projects",use_container_width=True):
+            st.session_state["pending_workspace"]="📁 Projects"
+            st.rerun()
+        return
+    state=item.get("state_json") or {}
+    project=state.get("project") or {}
+    areas=[a for a in state.get("market_areas",[]) if isinstance(a,dict)]
+    subject_plans=_safe_subject_plans(state.get("subject_plans") or [])
+    competitors=[int(x) for x in (project.get("selected_community_ids") or []) if str(x).isdigit()][:15]
+    st.write(f"**{item.get('name') or 'Saved project'}**")
+    st.caption(f"Subject: {project.get('subject_name') or 'Unspecified'} · {len(areas)} saved TMAs · {len(subject_plans)} subject plans · {len(competitors)} selected competitors")
+    st.info("Reference to the original desktop workbook. Charts below are recalculated from the current canonical MLS warehouse only; custom MLS files, saved exclusions, incentives and historical adjustments cannot be reproduced automatically.")
+    if not areas:
+        st.warning("This project has no saved target market areas.")
+        return
+    st.caption("Choose a saved TMA. Only the selected TMA is queried to keep mobile loading fast.")
+    selected=int(st.session_state.get("saved_project_selected_tma",0))
+    selected=max(0,min(selected,len(areas)-1))
+    with st.container(height=200,border=True):
+        for i,area in enumerate(areas):
+            label=f"{'● ' if i == selected else ''}{area.get('name') or f'TMA {i+1}'} · {area.get('geography_mode') or 'Saved geography'}"
+            if st.button(label,key=f"view_saved_tma_{item.get('id')}_{i}",use_container_width=True):
+                st.session_state["saved_project_selected_tma"]=i
+                st.session_state.pop("saved_project_chart",None)
+                st.rerun()
+    area=areas[selected]
+    st.write(f"**Market area: {area.get('name') or f'TMA {selected+1}'}**")
+    st.caption(f"Desktop source: {area.get('data_source_mode') or 'Unspecified'} · Historical date range: {area.get('tma_start') or '?'} – {area.get('tma_end') or '?'}")
+    try:
+        prefill=saved_market_prefill(area,project)
+        from datetime import date as _date
+        start=_date.fromisoformat(prefill["start"]) if prefill.get("start") else _date.today()-timedelta(days=365)
+        end=_date.fromisoformat(prefill["end"]) if prefill.get("end") else _date.today()
+        if start>end:
+            raise ValueError("The saved date range is invalid.")
+        mode=prefill["mode"]
+        if mode=="ZIP code":
+            loc={"zipCode":prefill["zip_code"]}
+        elif mode=="Coordinates + radius":
+            lat,lon=[float(x.strip()) for x in prefill["center_coordinates"].split(",")]
+            if not (-90<=lat<=90 and -180<=lon<=180):
+                raise ValueError("Invalid stored TMA coordinates.")
+            loc={"latitude":lat,"longitude":lon,"radius":prefill["radius"]}
+        else:
+            loc={"city":prefill["city"],"state":prefill["state"]}
+        products=prefill.get("analysis_products") or ["SFD"]
+        draft={"name":str(project.get("subject_name") or item.get("name") or ""),
+               "sf":0,"price":0,"mode":mode,"location":loc,
+               "analysis_product":products[0],"analysis_products":products,
+               "start":start,"end":end,"subject_plans":subject_plans,
+               "competitor_ids":competitors}
+        chart_key=(str(item.get("id")),selected)
+        chart=st.session_state.get("saved_project_chart")
+        if not chart or chart.get("key")!=chart_key:
+            with st.spinner("Loading this market from the MLS warehouse…"):
+                assembled=run_tma(mode,loc,products,start,end)
+                plans=current_plans(competitors) if competitors else []
+            st.session_state["saved_project_chart"]={"key":chart_key,"result":assembled,"plans":plans}
+            chart=st.session_state["saved_project_chart"]
+        market_lens(chart["result"],draft,chart["plans"])
+    except Exception as exc:
+        st.error(clean_error(exc))
+        st.caption("This saved TMA could not be reconstructed from the current canonical warehouse. The saved definition remains unchanged.")
+    if st.button("Edit this TMA as a Quick Scan",use_container_width=True):
+        try:
+            load_saved_workbook_into_scan(item,area_index=selected)
+            st.rerun()
+        except (ValueError,TypeError) as exc:
+            st.error(f"Unable to copy this TMA: {exc}")
+
 
 def library_view():
     st.subheader("Community library")
@@ -716,7 +801,7 @@ if configured():
     st.caption("Warehouse connection configured · available when you search, open a project, or analyze a market")
 else:
     st.warning("Read-only warehouse not connected. Project and MLS views are unavailable.")
-workspace_options=["📍 Quick Scan","📁 Projects","🏘️ Communities"]
+workspace_options=["📍 Quick Scan","📁 Projects","📊 Project View","🏘️ Communities"]
 if st.session_state.get("pending_workspace") in workspace_options:
     st.session_state["active_workspace"]=st.session_state.pop("pending_workspace")
 active_workspace=st.radio(
@@ -726,6 +811,8 @@ if active_workspace == "📍 Quick Scan":
     scan_view()
 elif active_workspace == "📁 Projects":
     project_view()
+elif active_workspace == "📊 Project View":
+    saved_project_view()
 else:
     library_view()
 st.divider()
