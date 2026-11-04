@@ -156,7 +156,7 @@ def test_saved_project_search_load_multiple_tmas_and_competitors(monkeypatch):
     assert len(queries)==2
     next(v for v in a.button if v.label=="Choose another project").click().run()
     _error_free(a)
-    assert not a.session_state.get("unified_open_project")
+    assert "unified_open_project" not in a.session_state
 
 
 def test_saved_project_rejects_unsupported_market_configuration():
