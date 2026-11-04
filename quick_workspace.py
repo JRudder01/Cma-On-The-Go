@@ -37,6 +37,7 @@ def subject_price_player(plans, signature):
             format_func=lambda p:f"{result['name']} · {p}",key="unified_player_category")
         offset=st.slider("Price relative to trend (%)",-25,25,0,1,key="unified_player_percent")
         model=models[choice]
+        st.session_state["unified_price_player_reference"]=choice
         st.caption(f"Supported range: {model['sf_min']:,.0f}–{model['sf_max']:,.0f} SF "
                    f"· Reliability: {model.get('pricing_reliability','Eligible')}")
         proposals=price_proposals(plans,model,offset)
@@ -125,6 +126,9 @@ def subject_inputs(signature: str):
     if previous.get("signature")==signature and st.session_state.get("unified_quick_draft"):
         st.session_state["unified_quick_draft"]["name"]=name
         st.session_state["unified_quick_draft"]["subject_plans"]=plans
+        selected_ref=st.session_state.get("unified_price_player_reference")
+        if selected_ref in (st.session_state.get("unified_quick_price_models") or {}):
+            st.session_state["unified_quick_draft"]["pricing_reference_product"]=selected_ref
     applied=st.session_state.pop("unified_player_applied",0)
     if applied:
         st.success(f"Applied suggested prices to {int(applied)} subject plan(s). "
