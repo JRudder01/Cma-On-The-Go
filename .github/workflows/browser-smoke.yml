@@ -1,0 +1,32 @@
+name: Browser interaction smoke test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install application and browser dependencies
+        run: |
+          pip install -r requirements.txt playwright
+          python -m playwright install --with-deps chromium
+      - name: Run local Streamlit end-to-end interaction test
+        run: |
+          mkdir -p .streamlit
+          printf 'ACCESS_PASSWORD = "CI-MOCK-PASSWORD-ONLY"\n' > .streamlit/secrets.toml
+          streamlit run app.py --server.headless true --server.port 8501 > /tmp/cma-streamlit.log 2>&1 &
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8501/_stcore/health; then break; fi
+            sleep 1
+          done
+          python scripts/browser_smoke.py || { cat /tmp/cma-streamlit.log; exit 1; }
+          rm -f .streamlit/secrets.toml
