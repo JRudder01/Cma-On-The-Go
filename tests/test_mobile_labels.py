@@ -19,3 +19,18 @@ def test_competitor_names_have_priority_and_no_duplicate_label_positions():
     assert len(labels)>=1
     assert len(labels)==len(set(labels))
     assert all(a.showarrow for a in fig.layout.annotations)
+
+
+def test_two_competitors_and_subject_all_receive_labels():
+    fig=go.Figure()
+    cluster=[
+        (1500,480,"Subject Place",True),
+        (1510,481,"Brixton",False),
+        (1515,482,"Chelsea",False),
+    ]
+    _annotate_sparse(fig,cluster)
+    label_text=" ".join(a.text for a in fig.layout.annotations)
+    assert "Subject Place" in label_text
+    assert "Brixton" in label_text
+    assert "Chelsea" in label_text
+    assert len(fig.layout.annotations)==3
