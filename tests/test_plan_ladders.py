@@ -184,6 +184,7 @@ def test_initial_chart_focus_ignores_extreme_mls_sizes():
     sales=pd.DataFrame({
         "Standard Status":["Closed"]*103,
         "Living Area":list(np.linspace(900,3000,100))+[6500,8200,8800],
+        "TMA Type":["SFD"]*103,
         "Close Price":list(np.linspace(450000,1000000,100))+[1500000,1850000,2200000],
     })
     fig=go.Figure()
@@ -202,6 +203,7 @@ def test_initial_focus_does_not_stretch_for_far_outlier_subject():
     sales=pd.DataFrame({
         "Standard Status":["Closed"]*30,
         "Living Area":list(range(1100,2600,50)),
+        "TMA Type":["SFD"]*30,
         "Close Price":list(range(450000,900000,15000)),
     })
     fig=go.Figure()
@@ -217,3 +219,38 @@ def test_payment_chart_focus_on_plan_ladders_without_mls():
     assert fig.layout.xaxis.range[0]<1400
     assert fig.layout.xaxis.range[1]>2000
     assert fig.layout.yaxis.range[1]>fig.layout.yaxis.range[0]
+
+
+def test_resale_scatter_inventory_and_viewport_respect_category_selection(monkeypatch):
+    """Never show SFD records inside an Attached-only Quick Scan, or vice versa."""
+    import mobile_chart
+    data=pd.DataFrame({
+        "Standard Status":["Closed","Closed","Active","Pending",
+                           "Closed","Active","Closed","Pending"],
+        "TMA Type":["Attached","Attached","Attached","Attached",
+                    "SFD","SFD","SFD","SFD"],
+        "Living Area":[1100,1600,1550,1800,8000,8200,8300,8100],
+        "Close Price":[510000,680000,0,0,2100000,0,2300000,0],
+        "List Price":[550000,710000,730000,770000,2200000,2400000,2350000,2300000],
+        "Price per Sq Ft":[463.6,425.0,0,0,262.5,0,277.1,0],
+    })
+    market={"name":"TMA Sample", "result":SimpleNamespace(available=True,mls=data),
+            "products":["Attached"]}
+    monkeypatch.setattr(mobile_chart,"analyze_tma_outliers",
+                        lambda group:(group.assign(Keep=True),{}))
+    monkeypatch.setattr(mobile_chart,"fit_resale_trend",
+                        lambda tagged:{"sf_min":1100,"sf_max":1600,
+                                       "automatic_pricing_eligible":False})
+    monkeypatch.setattr(mobile_chart,"trend_points",
+                        lambda model,lo,hi:pd.DataFrame({"SF":[1100,1600],
+                                                         "Price":[510000,680000]}))
+    fig,_,_=make_chart([market],{},[],"Price",6.5,20.)
+    scatters=[t for t in fig.data if t.type=="scattergl"]
+    assert len(scatters)==2
+    assert list(scatters[0].x)==[1100,1600]
+    assert list(scatters[1].x)==[1550,1800]
+    assert fig.layout.xaxis.range[1]<2500
+
+    inv,_,_=make_chart([market],{},[],"Inventory",6.5,20.)
+    assert list(inv.data[0].y)==[1,1,2]
+    assert list(inv.data[0].x)==["Active","Pending","Closed"]
