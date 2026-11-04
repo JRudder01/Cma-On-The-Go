@@ -5,21 +5,26 @@ import json
 import streamlit as st
 from data_access import configured,run_tma,current_plans,search_communities,suggest_communities
 from mobile_chart import render_analysis
+from price_player import eligible_market_models, price_proposals
 
 CATEGORIES=("SFD","Attached","Detached Condo")
 
 
-def subject_inputs():
+def subject_inputs(signature: str):
     name=st.text_input("Subject community name",key="unified_subject_name")
     count=st.number_input("Number of subject plans",0,8,value=0,step=1,key="unified_plan_count")
+    pending=st.session_state.pop("unified_pending_plan_prices",{})
+    for i,price in pending.items():
+        st.session_state[f"unified_plan_price_{i}"]=int(price)
     plans=[]
     for i in range(int(count)):
         with st.expander(f"Plan {i+1}",expanded=count==1):
             label=st.text_input("Plan name",value=f"Plan {i+1}",key=f"unified_plan_name_{i}")
             sf=st.number_input("Home size (SF)",0,30000,step=50,key=f"unified_plan_sf_{i}")
             price=st.number_input("Asking price ($)",0,100000000,step=10000,key=f"unified_plan_price_{i}")
-        if sf>0 and price>0:
-            plans.append({"name":label,"sqft":sf,"base_price":price})
+        if sf>0:
+            plans.append({"name":label,"sqft":sf,"base_price":price,"input_index":i})
+    subject_price_player(plans,signature)
     return name,plans
 
 
