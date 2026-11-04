@@ -19,9 +19,9 @@ def main():
         page.get_by_role("button", name="Unlock").click()
 
         page.get_by_text("Quick Market Scan").wait_for(timeout=25000)
-        page.get_by_role("radio", name="ZIP code").check(timeout=15000)
+        page.get_by_text("ZIP code", exact=True).first.click(timeout=15000)
         page.get_by_role("textbox", name="ZIP code").wait_for(timeout=15000)
-        page.get_by_role("radio", name="City + state").check(timeout=15000)
+        page.get_by_text("City + state", exact=True).first.click(timeout=15000)
         page.get_by_role("textbox", name="City", exact=True).wait_for(timeout=15000)
 
         page.get_by_role("tab", name=re.compile("Projects")).click()
