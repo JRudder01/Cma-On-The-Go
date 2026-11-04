@@ -23,13 +23,9 @@ def warehouse_ready() -> bool:
     """Use warehouse only on explicit Search/Open/Analyze actions."""
     return configured()
 
-st.markdown("""<style>
-.block-container{max-width:900px;padding-top:1.25rem;padding-left:1rem;padding-right:1rem;padding-bottom:5rem}
-h1{font-size:1.85rem!important;letter-spacing:-.045em} h2{font-size:1.3rem!important}
-div[data-testid="stMetric"]{background:#f4f7fb;border:1px solid #e0e7f0;border-radius:12px;padding:12px}
-div[data-testid="stVerticalBlock"] > div{min-width:0}
-@media(max-width:640px){div[data-testid="stHorizontalBlock"]{gap:.45rem} .stPlotlyChart{margin-left:-6px;margin-right:-6px}}
-</style>""", unsafe_allow_html=True)
+# Use native Streamlit layout rather than injected CSS; mobile app should not
+# render raw style fragments on Streamlit Community Cloud.
+
 
 
 def clean_error(exc: Exception) -> str:
@@ -245,13 +241,16 @@ def project_view():
     if not records:
         st.caption("Use Search saved projects to load the matching list.")
         return
-    labels={f"{p['name']} · {p.get('city') or 'Unknown city'} · {str(p['id'])[:8]}":p["id"] for p in records}
-    pick=st.selectbox("Select project",list(labels))
-    if st.button("Open snapshot",use_container_width=True):
-        try:
-            st.session_state["desktop_project"]=load_project(labels[pick])
-        except Exception as exc:
-            st.error(clean_error(exc))
+    st.caption(f"{len(records)} matching saved project(s). Tap a project to open its read-only snapshot.")
+    with st.container(height=310, border=True):
+        for saved in records:
+            label = f"{saved['name']} · {saved.get('city') or 'Unknown city'}"
+            if st.button(label, key=f"open_project_{saved['id']}", use_container_width=True):
+                try:
+                    with st.spinner("Opening saved analysis…"):
+                        st.session_state["desktop_project"] = load_project(str(saved["id"]))
+                except Exception as exc:
+                    st.error(clean_error(exc))
     item=st.session_state.get("desktop_project")
     if item:
         state=item.get("state_json") or {}
