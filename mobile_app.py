@@ -310,9 +310,71 @@ def saved_market_prefill(area: dict, project: dict) -> dict:
     return fields
 
 
+def _safe_subject_plans(saved: list) -> list[dict]:
+    """Copy valid desktop subject plans to an ephemeral mobile draft."""
+    result=[]
+    for i, plan in enumerate(saved[:8]):
+        if not isinstance(plan, dict) or plan.get("Include") is False:
+            continue
+        try:
+            sqft=max(0,int(float(plan.get("SF") or 0)))
+            price=max(0,int(float(plan.get("Base Price") or 0)))
+        except (ValueError,TypeError):
+            sqft,price=0,0
+        result.append({"name":str(plan.get("Plan/Offering") or f"Plan {i+1}"),
+                       "sqft":sqft,"base_price":price})
+    return result
+
+
+def load_saved_workbook_into_scan(item: dict, area_index: int | None = None) -> None:
+    """Load saved definitions in browser memory; never change desktop project data."""
+    state=item.get("state_json") or {}
+    project=state.get("project") or {}
+    areas=[a for a in (state.get("market_areas") or []) if isinstance(a,dict)]
+    selected_area=None
+    if area_index is not None:
+        if area_index < 0 or area_index >= len(areas):
+            raise ValueError("Saved TMA selection is invalid.")
+        selected_area=areas[area_index]
+    elif areas:
+        # Prefer a supported, complete market definition instead of silently
+        # copying an incomplete geography from the first saved TMA.
+        for area in areas:
+            try:
+                saved_market_prefill(area,project)
+                selected_area=area
+                break
+            except (ValueError,TypeError):
+                continue
+    if selected_area is not None:
+        prefill=saved_market_prefill(selected_area,project)
+    else:
+        prefill={"mode":"City + state","city":str(project.get("subject_city") or item.get("city") or ""),
+                 "state":str(project.get("subject_state") or item.get("state") or "CA"),
+                 "name":str(item.get("name") or "Saved project"),"analysis_products":["SFD"]}
+        prefill["product_review_needed"]=True
+    st.session_state["scan_prefill"]=prefill
+    st.session_state["draft_subject"]={"name":str(project.get("subject_name") or ""),
+                                         "sf":0,"price":0}
+    st.session_state["project_comm_ids"]=[
+        int(v) for v in (project.get("selected_community_ids") or [])
+        if str(v).isdigit()
+    ][:15]
+    st.session_state["draft_subject_plans"]=_safe_subject_plans(state.get("subject_plans") or [])
+    st.session_state["scan_prefill_revision"]=int(st.session_state.get("scan_prefill_revision",0))+1
+    st.session_state["loaded_project_label"]=str(item.get("name") or "Saved project")
+    st.session_state["loaded_market_areas"]=areas
+    # Never keep a prior project's analysis on screen after switching workbooks.
+    for stale in ("market_result","market_draft","market_plans","competitor_search_rows","community_plan_rows"):
+        st.session_state.pop(stale,None)
+    # The navigation widget was already rendered on the previous run. Queue
+    # the tab change for the start of the next run, before that widget is built.
+    st.session_state["pending_workspace"]="📍 Quick Scan"
+
+
 def project_view():
     st.subheader("Saved desktop projects")
-    st.caption("Read-only: opening projects or copying TMA settings never changes the desktop workspace.")
+    st.caption("Read-only: opening or loading a project never changes the desktop workspace.")
     if not warehouse_ready():
         st.info("Configure the existing restricted read-only warehouse connection first.")
         return
@@ -372,20 +434,14 @@ def project_view():
     b.metric("Competitors", len(competitors))
     c.metric("Subject plans", len(subject_plans))
     st.caption("Selected competitors are saved IDs from CMA O' Matic. Mobile searches current warehouse community/plan data.")
-    if st.button("Copy subject and competitors into Quick Scan", key="copy_desktop_subject", use_container_width=True):
-        st.session_state["draft_subject"] = {
-            "name": str(project.get("subject_name") or ""),
-            "sf": 0, "price": 0,
-        }
-        st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
-        st.session_state["scan_prefill_revision"]=int(st.session_state.get("scan_prefill_revision",0))+1
-        st.session_state["draft_subject_plans"] = [
-            {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
-             "sqft": int(float(p.get("SF") or 0)),
-             "base_price": int(float(p.get("Base Price") or 0))}
-            for i, p in enumerate(subject_plans[:8]) if isinstance(p, dict) and p.get("Include", True)
-        ]
-        st.rerun()
+    if st.button("Load in Quick Market Scan", key="load_saved_workbook",
+                 type="primary", use_container_width=True):
+        try:
+            load_saved_workbook_into_scan(item)
+            st.rerun()
+        except (ValueError,TypeError) as exc:
+            st.error(f"Unable to load the saved workbook: {exc}")
+
 
     st.write("**Saved target market areas**")
     if not areas:
@@ -404,24 +460,14 @@ def project_view():
                 st.write(f"ZIP: {area.get('zip_code') or 'Unspecified'}")
             else:
                 st.write(f"{area.get('city') or 'Unspecified'}, {area.get('state') or ''}")
-            if st.button("Use this TMA in Quick Scan", key=f"use_saved_area_{item.get('id','unknown')}_{i}", use_container_width=True):
+            if st.button("Load this TMA in Quick Market Scan",
+                         key=f"use_saved_area_{item.get('id','unknown')}_{i}",
+                         use_container_width=True):
                 try:
-                    st.session_state["scan_prefill"] = saved_market_prefill(area, project)
-                    st.session_state["draft_subject"] = {
-                        "name": str(project.get("subject_name") or ""),
-                        "sf": 0, "price": 0,
-                    }
-                    st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
-                    st.session_state["scan_prefill_revision"]=int(st.session_state.get("scan_prefill_revision",0))+1
-                    st.session_state["draft_subject_plans"] = [
-                        {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
-                         "sqft": int(float(p.get("SF") or 0)),
-                         "base_price": int(float(p.get("Base Price") or 0))}
-                        for i, p in enumerate(subject_plans[:8]) if isinstance(p, dict) and p.get("Include", True)
-                    ]
+                    load_saved_workbook_into_scan(item,area_index=i)
                     st.rerun()
-                except Exception as exc:
-                    st.error(str(exc))
+                except (ValueError,TypeError) as exc:
+                    st.error(f"Unable to load the selected TMA: {exc}")
     st.info("Saved desktop analyses are reference snapshots. Quick Scan rebuilds a new result from currently available canonical MLS records; it does not reproduce custom MLS data, saved outlier edits, or historical pricing results.")
 
 def library_view():
@@ -656,9 +702,17 @@ if configured():
     st.caption("Warehouse connection configured · available when you search, open a project, or analyze a market")
 else:
     st.warning("Read-only warehouse not connected. Project and MLS views are unavailable.")
-tabs=st.tabs(["📍 Quick Scan","📁 Projects","🏘️ Communities"])
-with tabs[0]: scan_view()
-with tabs[1]: project_view()
-with tabs[2]: library_view()
+workspace_options=["📍 Quick Scan","📁 Projects","🏘️ Communities"]
+if st.session_state.get("pending_workspace") in workspace_options:
+    st.session_state["active_workspace"]=st.session_state.pop("pending_workspace")
+active_workspace=st.radio(
+    "Workspace",workspace_options,horizontal=True,
+    key="active_workspace",label_visibility="collapsed")
+if active_workspace == "📍 Quick Scan":
+    scan_view()
+elif active_workspace == "📁 Projects":
+    project_view()
+else:
+    library_view()
 st.divider()
 st.caption("v0.1 field prototype · No MLS uploads · No database writes · No user-facing partner branding")
