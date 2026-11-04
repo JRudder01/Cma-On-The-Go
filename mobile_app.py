@@ -427,6 +427,7 @@ def library_view():
                     if st.button(label,key=f"library_suggest_{proposal['id']}",use_container_width=True):
                         st.session_state["community_search_rows"]=[proposal]
                         st.session_state["library_selected_ids"]=[int(proposal["id"])]
+                        st.session_state[f"library_choose_{int(proposal['id'])}"]=True
                         st.rerun()
         except Exception as exc:
             st.caption("Suggestions temporarily unavailable; manual search remains available.")
@@ -565,6 +566,7 @@ def scan_view():
                                 if int(p["id"]) not in selected_ids and len(selected_ids) < 15:
                                     selected_ids.append(int(p["id"]))
                                 st.session_state["project_comm_ids"]=selected_ids
+                                st.session_state[f"scan_comp_{int(p['id'])}"]=True
                                 st.rerun()
                 except Exception:
                     st.caption("Suggestions unavailable; manual search still works.")
