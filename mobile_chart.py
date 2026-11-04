@@ -460,13 +460,13 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
     # interactive/responsive legend (including when expanded).
     show_market_legend=metric in ("Price/SF","Price")
     n_market_lines=len(trend_labels) if show_market_legend else 0
-    legend_bottom=100+max(0,n_market_lines-3)*10 if n_market_lines else 40
+    legend_bottom=90+max(0,n_market_lines-3)*10 if n_market_lines else 40
     fig.update_layout(
         template="plotly_white",
         height=(460 if metric in ("Price/SF","Price","Payment") else 390)
                + (legend_bottom-40 if n_market_lines else 0),
         margin=dict(l=6,r=6,t=24,b=legend_bottom),font=dict(size=11),
-        legend=dict(orientation="h",y=-0.19,yanchor="top",x=0,xanchor="left",
+        legend=dict(orientation="h",y=-0.13,yanchor="top",x=0,xanchor="left",
                     font=dict(size=10),tracegroupgap=4),
         hovermode="closest",dragmode="pan"
     )
