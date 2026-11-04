@@ -90,6 +90,13 @@ def test_mobile_chart_visual_hierarchy_emphasizes_communities(monkeypatch):
     assert tma.line.width < comp_line.line.width < subject_line.line.width
     assert subject_line.marker.size >= 15
     assert comp_line.marker.size >= 11
+    # Market legend stays part of Plotly (never a separate Streamlit block)
+    # and is positioned below the axes to avoid covering the mobile modebar.
+    assert fig.layout.legend.orientation=="h"
+    assert fig.layout.legend.y<0
+    assert fig.layout.legend.yanchor=="top"
+    assert fig.layout.margin.b>=90
+    assert len([t for t in fig.data if t.showlegend])>=1
 
 
 def test_payment_chart_connects_independent_plan_ladders():
