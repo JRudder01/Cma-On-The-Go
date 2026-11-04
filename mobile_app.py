@@ -370,6 +370,7 @@ def project_view():
             "sf": 0, "price": 0,
         }
         st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+        st.session_state["scan_prefill_revision"]=int(st.session_state.get("scan_prefill_revision",0))+1
         st.session_state["draft_subject_plans"] = [
             {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
              "sqft": int(float(p.get("SF") or 0)),
@@ -403,6 +404,7 @@ def project_view():
                         "sf": 0, "price": 0,
                     }
                     st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+                    st.session_state["scan_prefill_revision"]=int(st.session_state.get("scan_prefill_revision",0))+1
                     st.session_state["draft_subject_plans"] = [
                         {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
                          "sqft": int(float(p.get("SF") or 0)),
@@ -485,6 +487,7 @@ def scan_view():
         st.info("Configure the read-only warehouse credential to enable live market scans.")
     subject=st.session_state.get("draft_subject") or {}
     prefill=st.session_state.get("scan_prefill") or {}
+    revision=int(st.session_state.get("scan_prefill_revision",0))
     if prefill:
         st.info(f"Saved TMA settings loaded: {prefill.get('name') or 'Market area'}. Review before running a fresh MLS-only scan.")
         if prefill.get("product_review_needed"):
@@ -513,7 +516,7 @@ def scan_view():
         chosen_products=[
             category for category in product_options
             if st.checkbox(category, value=(category in prefill.get("analysis_products",[prefill.get("analysis_product","SFD")])),
-                           key="scan_product_"+category.replace(" ","_").lower())
+                           key="scan_product_"+category.replace(" ","_").lower()+f"_{revision}")
         ]
         saved_start = saved_end = None
         try:
@@ -548,9 +551,9 @@ def scan_view():
         for i in range(int(n_subject)):
             prior=previous_plans[i] if i < len(previous_plans) else {}
             with st.expander(f"Subject plan {i+1}", expanded=(n_subject == 1)):
-                plan_label=st.text_input(f"Plan {i+1} name", value=str(prior.get("name") or f"Plan {i+1}"), key=f"subject_plan_name_{i}")
-                plan_sf=st.number_input(f"Plan {i+1} size (SF)",min_value=0,max_value=30000,step=50,value=int(prior.get("sqft") or 0), key=f"subject_plan_sf_{i}")
-                plan_price=st.number_input(f"Plan {i+1} price ($)",min_value=0,max_value=100000000,step=10000,value=int(prior.get("base_price") or 0), key=f"subject_plan_price_{i}")
+                plan_label=st.text_input(f"Plan {i+1} name", value=str(prior.get("name") or f"Plan {i+1}"), key=f"subject_plan_name_{revision}_{i}")
+                plan_sf=st.number_input(f"Plan {i+1} size (SF)",min_value=0,max_value=30000,step=50,value=int(prior.get("sqft") or 0), key=f"subject_plan_sf_{revision}_{i}")
+                plan_price=st.number_input(f"Plan {i+1} price ($)",min_value=0,max_value=100000000,step=10000,value=int(prior.get("base_price") or 0), key=f"subject_plan_price_{revision}_{i}")
             if plan_sf > 0 and plan_price > 0:
                 subject_plans.append({"name":plan_label,"sqft":plan_sf,"base_price":plan_price})
         sf=subject_plans[0]["sqft"] if subject_plans else 0
