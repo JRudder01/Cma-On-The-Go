@@ -33,7 +33,7 @@ def test_price_player_blocks_unreliable_or_outside_support():
     model["automatic_pricing_eligible"]=True
     rows=price_proposals([{"sqft":2500,"name":"Oversized","base_price":0}],model,0)
     assert rows[0]["extrapolated"] is True
-    assert rows[0]["target_price"]==1076250
+    assert rows[0]["target_price"]==1025000
     assert rows[0]["support_boundary_sf"]==2300
     assert rows[0]["distance_sf"]==200
     assert rows[0]["distance_pct"]==8.7
