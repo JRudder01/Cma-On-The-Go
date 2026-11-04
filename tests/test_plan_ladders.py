@@ -167,5 +167,5 @@ def test_selected_price_player_trend_extends_dashed_beyond_support(monkeypatch):
 
     draft["pricing_reference_product"]="SFD"
     fig,_,_=make_chart([market],draft,[],"Price",6.5,20.)
-    assert not any("extrapolated" in trace.name for trace in fig.data)
+    assert not any("extrapolated" in (trace.name or "") for trace in fig.data)
 
