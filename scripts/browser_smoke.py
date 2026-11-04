@@ -24,15 +24,13 @@ def main():
         page.get_by_text("City + state", exact=True).first.click(timeout=15000)
         page.get_by_role("textbox", name="City", exact=True).wait_for(timeout=15000)
 
-        page.get_by_text("📁 Projects", exact=True).first.click()
-        page.get_by_text("Saved desktop projects").wait_for(timeout=15000)
-        page.get_by_text("🏘️ Communities", exact=True).first.click()
-        page.get_by_text("Community library").wait_for(timeout=15000)
-        page.get_by_text("📍 Quick Scan", exact=True).first.click()
+        page.get_by_text("Saved Project", exact=True).first.click()
+        page.get_by_text("Search saved project or city").wait_for(timeout=15000)
+        page.get_by_text("Quick Scan", exact=True).first.click()
         page.get_by_text("Quick Market Scan").wait_for(timeout=15000)
 
         assert not errors, "Browser JavaScript errors: " + repr(errors)
-        print("PASS: initial load, password, two geography changes, Projects, Communities, Quick Scan")
+        print("PASS: initial load, password, two geography changes, Saved Project, Quick Scan")
         browser.close()
 
 
