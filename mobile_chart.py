@@ -97,7 +97,9 @@ def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) 
         width=max(55,min(125,len(label)*6+12))
         anchor_x=(x-xmin)/xspan*580
         anchor_y=(y-ymin)/yspan*320
-        choices=[(0,-42),(0,42),(85,-30),(-85,-30),(90,38),(-90,38)]
+        choices=[(0,-42),(0,42),(85,-30),(-85,-30),(90,38),(-90,38),
+                 (140,-52),(-140,-52),(145,52),(-145,52),
+                 (0,-92),(0,92),(180,-15),(-180,-15)]
         selected=None
         for dx,dy in choices:
             cx=anchor_x+dx
@@ -110,7 +112,14 @@ def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) 
             selected=(dx,dy,cx,cy)
             break
         if selected is None:
-            continue
+            if len(points)>5:
+                continue
+            # With only a subject and a few competitors, every community
+            # deserves a chart label. Stagger remaining annotations instead
+            # of silently discarding a tightly clustered community.
+            dx=(-130 if idx % 2 else 130)
+            dy=(-65 if idx % 3 else 65) + 23 * (idx // 3)
+            selected=(dx,dy,anchor_x+dx,anchor_y+dy)
         dx,dy,cx,cy=selected
         placed.append((cx,cy,width))
         fig.add_annotation(
