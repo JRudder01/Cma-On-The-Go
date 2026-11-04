@@ -543,22 +543,39 @@ def scan_view():
     prefill=st.session_state.get("scan_prefill") or {}
     revision=int(st.session_state.get("scan_prefill_revision",0))
     if prefill:
-        st.info(f"Saved TMA settings loaded: {prefill.get('name') or 'Market area'}. Review before running a fresh MLS-only scan.")
+        loaded_name=st.session_state.get("loaded_project_label")
+        if loaded_name:
+            st.success(f"Loaded: {loaded_name} · {prefill.get('name') or 'Market area'}")
+        else:
+            st.info(f"Saved TMA settings loaded: {prefill.get('name') or 'Market area'}.")
+        st.caption("The subject, subject plans, competitor IDs and saved TMA settings are copied to this mobile session. Run Analyze market for new MLS-only results.")
         if prefill.get("product_review_needed"):
             st.warning("Desktop TMA contains mixed product buckets. Choose the resale category to analyze; mobile does not combine them into one trend.")
+    other_areas=st.session_state.get("loaded_market_areas") or []
+    loaded_item=st.session_state.get("desktop_project")
+    if loaded_item and len(other_areas)>1:
+        with st.expander(f"Switch saved TMA ({len(other_areas)} available)"):
+            for i,area in enumerate(other_areas):
+                if st.button(str(area.get("name") or f"TMA {i+1}"),
+                             key=f"quick_switch_tma_{i}",use_container_width=True):
+                    try:
+                        load_saved_workbook_into_scan(loaded_item,area_index=i)
+                        st.rerun()
+                    except (ValueError,TypeError) as exc:
+                        st.error(f"Unable to load this TMA: {exc}")
     with st.expander("1 · Market area",expanded=True):
         geography_options=["City + state","ZIP code","Coordinates + radius"]
-        mode=st.radio("Geography",geography_options,index=geography_options.index(prefill.get("mode","City + state")),horizontal=False)
+        mode=st.radio("Geography",geography_options,index=geography_options.index(prefill.get("mode","City + state")),horizontal=False,key=f"scan_geo_{revision}")
         if mode=="City + state":
-            city=st.text_input("City",value=prefill.get("city",st.session_state.get("scan_city","")))
-            state=st.text_input("State",value=prefill.get("state","CA"),max_chars=2)
+            city=st.text_input("City",value=prefill.get("city",st.session_state.get("scan_city","")),key=f"scan_city_{revision}")
+            state=st.text_input("State",value=prefill.get("state","CA"),max_chars=2,key=f"scan_state_{revision}")
             location={"city":city,"state":state}
         elif mode=="ZIP code":
-            zipcode=st.text_input("ZIP code",value=prefill.get("zip_code",""),max_chars=5)
+            zipcode=st.text_input("ZIP code",value=prefill.get("zip_code",""),max_chars=5,key=f"scan_zip_{revision}")
             location={"zipCode":zipcode}
         else:
-            center=st.text_input("Latitude, longitude",value=prefill.get("center_coordinates",""),placeholder="32.8384, -116.9739")
-            radius=st.slider("Radius (miles)",0.5,15.0,min(15.,max(0.5,round(float(prefill.get("radius",3.0))*2)/2)),0.5)
+            center=st.text_input("Latitude, longitude",value=prefill.get("center_coordinates",""),placeholder="32.8384, -116.9739",key=f"scan_center_{revision}")
+            radius=st.slider("Radius (miles)",0.5,15.0,min(15.,max(0.5,round(float(prefill.get("radius",3.0))*2)/2)),0.5,key=f"scan_radius_{revision}")
             location={}
             try:
                 lat,lon=[float(x.strip()) for x in center.split(",")]
@@ -584,7 +601,7 @@ def scan_view():
         period_options=["Last 12 months","Last 6 months","Last 24 months","Custom dates"]
         if saved_start and saved_end:
             period_options.insert(0,"Saved TMA dates")
-        period=st.radio("Closed-sale period",period_options,index=0 if saved_start else 0,horizontal=True)
+        period=st.radio("Closed-sale period",period_options,index=0,horizontal=True,key=f"scan_period_{revision}")
         if period == "Saved TMA dates":
             start,end=saved_start,saved_end
         elif period == "Custom dates":
@@ -597,10 +614,10 @@ def scan_view():
             start=end-timedelta(days=days)
         st.caption(f"Historical sale window: {start} to {end}. Canonical MLS only.")
     with st.expander("2 · Subject (optional)",expanded=False):
-        name=st.text_input("Subject community name",value=subject.get("name",""))
+        name=st.text_input("Subject community name",value=subject.get("name",""),key=f"scan_subject_name_{revision}")
         st.caption("Enter individual subject plans. You can leave the subject blank for MLS-only scans.")
         previous_plans=st.session_state.get("draft_subject_plans") or []
-        n_subject=st.number_input("Number of subject plans",min_value=0,max_value=8,value=min(8,len(previous_plans)),step=1)
+        n_subject=st.number_input("Number of subject plans",min_value=0,max_value=8,value=min(8,len(previous_plans)),step=1,key=f"scan_subject_count_{revision}")
         subject_plans=[]
         for i in range(int(n_subject)):
             prior=previous_plans[i] if i < len(previous_plans) else {}
