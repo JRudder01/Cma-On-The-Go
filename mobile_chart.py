@@ -187,6 +187,51 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                     line=dict(color=color,width=1.8,dash=PRODUCT_DASH.get(product,"solid")),
                     opacity=0.60,
                     hovertemplate=trace_name+": %{x:,.0f} SF · $%{y:,.0f}<extra></extra>"))
+                # Only extend the chosen Quick Scan pricing reference and only
+                # when subject plans exceed the retained MLS support interval.
+                # The extension is a prediction of the SAME fitted equation,
+                # never a newly fitted trend or evidence of observed sales.
+                if (len(series)==1 and
+                    draft.get("pricing_reference_product")==product and
+                    model.get("automatic_pricing_eligible")):
+                    subject_sizes=[]
+                    for p in draft.get("subject_plans") or []:
+                        try:
+                            sf=float(p.get("sqft") or 0)
+                            if isfinite(sf) and sf>0:
+                                subject_sizes.append(sf)
+                        except (TypeError,ValueError):
+                            continue
+                    lo=float(model["sf_min"]); hi=float(model["sf_max"])
+                    for boundary, outer in (
+                        (lo, min((sf for sf in subject_sizes if sf<lo),default=lo)),
+                        (hi, max((sf for sf in subject_sizes if sf>hi),default=hi)),
+                    ):
+                        if outer==boundary:
+                            continue
+                        coords=[boundary,outer]
+                        prices=[float(model["intercept"])+float(model["slope"])*sf
+                                for sf in coords]
+                        if min(prices)<=0 or not all(isfinite(y) for y in prices):
+                            diagnostics.append((trace_name,"Extrapolated segment has invalid predicted values"))
+                            continue
+                        y_values=(prices if metric=="Price" else
+                                  [price/sf for price,sf in zip(prices,coords)])
+                        fig.add_trace(go.Scatter(
+                            x=coords,y=y_values,mode="lines",
+                            name=trace_name+" · extrapolated",
+                            showlegend=False,
+                            line=dict(color=color,width=2,dash="dash"),
+                            opacity=.68,
+                            hovertemplate=trace_name+
+                                "<br>Extrapolated beyond closed MLS support: "
+                                "%{x:,.0f} SF · $%{y:,.0f}<extra></extra>"
+                        ))
+                    if any(sf<lo or sf>hi for sf in subject_sizes):
+                        diagnostics.append((trace_name,
+                            f"Dashed extensions beyond {lo:,.0f}–{hi:,.0f} SF are "
+                            "extrapolated from the existing fitted equation, not supported by "
+                            "closed MLS sales of those sizes."))
                 if not model.get("automatic_pricing_eligible"):
                     diagnostics.append((trace_name,"Descriptive trend only; not certified for pricing"))
         # Community product ladders are straight connectors between listed
