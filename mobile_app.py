@@ -224,51 +224,125 @@ def market_lens(result, draft, plans):
     st.info("Preliminary field-view analysis. Desktop parity, MLS coverage completeness and pricing adjustments are not yet certified.")
 
 
+def saved_market_prefill(area: dict, project: dict) -> dict:
+    """Extract a read-only desktop TMA definition for mobile MLS-only reanalysis."""
+    mode = str(area.get("geography_mode") or "City + state")
+    if mode not in ("City + state", "ZIP code", "Coordinates + radius"):
+        raise ValueError("This desktop geography is not supported in mobile Quick Scan.")
+    fields = {"mode": mode, "name": str(area.get("name") or "Market area"),
+              "city": str(area.get("city") or project.get("subject_city") or ""),
+              "state": str(area.get("state") or project.get("subject_state") or "CA"),
+              "zip_code": str(area.get("zip_code") or ""),
+              "center_coordinates": str(area.get("center_coordinates") or ""),
+              "radius": float(area.get("radius") or 3),
+              "start": str(area.get("tma_start") or ""),
+              "end": str(area.get("tma_end") or "")}
+    if mode == "ZIP code" and len(fields["zip_code"]) != 5:
+        raise ValueError("The saved TMA does not contain a usable ZIP code.")
+    if mode == "Coordinates + radius":
+        parts = fields["center_coordinates"].split(",")
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            raise ValueError("The saved TMA does not contain usable center coordinates.")
+    if mode == "City + state" and (not fields["city"] or not fields["state"]):
+        raise ValueError("The saved TMA does not contain a usable city and state.")
+    product_types = area.get("property_types") or []
+    product_text = " ".join(str(v).lower() for v in product_types)
+    if "single family" in product_text and not ("condo" in product_text or "townhouse" in product_text):
+        fields["analysis_product"] = "SFD"
+    elif "townhouse" in product_text and "single family" not in product_text:
+        fields["analysis_product"] = "Attached"
+    elif "condo" in product_text and "single family" not in product_text:
+        fields["analysis_product"] = "Attached"
+    else:
+        fields["analysis_product"] = "SFD"
+        fields["product_review_needed"] = True
+    return fields
+
+
 def project_view():
     st.subheader("Saved desktop projects")
-    st.caption("Read-only: loading a project will not normalize, update, or resave its desktop state.")
+    st.caption("Read-only: opening projects or copying TMA settings never changes the desktop workspace.")
     if not warehouse_ready():
-        st.info("Connect a restricted read-only warehouse credential to list existing projects.")
+        st.info("Configure the existing restricted read-only warehouse connection first.")
         return
-    term=st.text_input("Search project or city",placeholder="Search saved analyses…")
+    term = st.text_input("Search project or city", placeholder="Search saved analyses…")
     if st.button("Search saved projects", key="search_saved_projects"):
         try:
             with st.spinner("Retrieving saved projects…"):
                 st.session_state["saved_project_rows"] = list_projects(term)
         except Exception as exc:
             st.error(clean_error(exc))
-    records=st.session_state.get("saved_project_rows", [])
+    records = st.session_state.get("saved_project_rows", [])
     if not records:
         st.caption("Use Search saved projects to load the matching list.")
         return
-    st.caption(f"{len(records)} matching saved project(s). Tap a project to open its read-only snapshot.")
-    with st.container(height=310, border=True):
+    st.caption(f"{len(records)} matching saved project(s). Tap one to open its desktop snapshot.")
+    with st.container(height=290, border=True):
         for saved in records:
             label = f"{saved['name']} · {saved.get('city') or 'Unknown city'}"
             if st.button(label, key=f"open_project_{saved['id']}", use_container_width=True):
                 try:
                     with st.spinner("Opening saved analysis…"):
-                        st.session_state["desktop_project"] = load_project(str(saved["id"]))
+                        item = load_project(str(saved["id"]))
+                        item["id"] = str(saved["id"])
+                        st.session_state["desktop_project"] = item
                 except Exception as exc:
                     st.error(clean_error(exc))
-    item=st.session_state.get("desktop_project")
-    if item:
-        state=item.get("state_json") or {}
-        project=state.get("project",{})
-        st.markdown(f"### {item.get('name','Saved analysis')}")
-        c1,c2=st.columns(2)
-        c1.metric("Subject",project.get("subject_name") or "Not specified")
-        c2.metric("Selected communities",len(project.get("selected_community_ids") or []))
-        st.write("Market areas")
-        for area in state.get("market_areas",[]):
-            st.write(f"• {area.get('name') or 'Market area'} — {area.get('geography_mode') or 'Unspecified geography'}")
-        st.caption("View-only desktop project snapshot. Any embedded custom MLS records are not displayed here; a mobile warehouse analysis uses MLS-only canonical data.")
-        if st.button("Use project's subject in Quick Scan"):
-            st.session_state["draft_subject"]={"name":project.get("subject_name") or "",
-                "sf":0,"price":0}
-            st.session_state["project_comm_ids"]=project.get("selected_community_ids") or []
-            st.success("Subject label and competitor selections copied into this session; open Quick Scan to configure the market.")
+    item = st.session_state.get("desktop_project")
+    if not item:
+        return
 
+    state = item.get("state_json") or {}
+    project = state.get("project") or {}
+    areas = state.get("market_areas") or []
+    competitors = project.get("selected_community_ids") or []
+    subject_plans = state.get("subject_plans") or []
+    st.subheader(str(item.get("name") or "Saved analysis"))
+    st.caption(f"Saved desktop snapshot · {item.get('updated_at') or 'Date unavailable'}")
+    st.write(f"**Subject:** {project.get('subject_name') or 'Not specified'}")
+    st.caption(f"Builder: {project.get('subject_builder') or 'Not specified'} · Product: {project.get('subject_product') or 'Not specified'}")
+    a, b, c = st.columns(3)
+    a.metric("TMAs", len(areas))
+    b.metric("Competitors", len(competitors))
+    c.metric("Subject plans", len(subject_plans))
+    st.caption("Selected competitors are saved IDs from CMA O' Matic. Mobile searches current warehouse community/plan data.")
+    if st.button("Copy subject and competitors into Quick Scan", key="copy_desktop_subject", use_container_width=True):
+        st.session_state["draft_subject"] = {
+            "name": str(project.get("subject_name") or ""),
+            "sf": 0, "price": 0,
+        }
+        st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+        st.success("Subject name and competitor IDs copied. Open Quick Scan to review sizes, prices and geography.")
+
+    st.write("**Saved target market areas**")
+    if not areas:
+        st.info("This saved desktop project does not contain market areas.")
+    for i, area in enumerate(areas):
+        if not isinstance(area, dict):
+            continue
+        title = str(area.get("name") or f"Market area {i + 1}")
+        mode = str(area.get("geography_mode") or "Unknown geography")
+        with st.expander(f"{title} · {mode}", expanded=(len(areas) == 1)):
+            st.caption(f"Saved analysis dates: {area.get('tma_start') or '?'} – {area.get('tma_end') or '?'}")
+            st.caption(f"Saved source mode: {area.get('data_source_mode') or 'Unknown'}")
+            if mode == "Coordinates + radius":
+                st.write(f"Center: {area.get('center_coordinates') or 'Unspecified'} · Radius: {area.get('radius') or '?'} mi")
+            elif mode == "ZIP code":
+                st.write(f"ZIP: {area.get('zip_code') or 'Unspecified'}")
+            else:
+                st.write(f"{area.get('city') or 'Unspecified'}, {area.get('state') or ''}")
+            if st.button("Use this TMA in Quick Scan", key=f"use_saved_area_{item.get('id','unknown')}_{i}", use_container_width=True):
+                try:
+                    st.session_state["scan_prefill"] = saved_market_prefill(area, project)
+                    st.session_state["draft_subject"] = {
+                        "name": str(project.get("subject_name") or ""),
+                        "sf": 0, "price": 0,
+                    }
+                    st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+                    st.success("TMA settings copied. Open Quick Scan to review and run the MLS-only analysis.")
+                except Exception as exc:
+                    st.error(str(exc))
+    st.info("Saved desktop analyses are reference snapshots. Quick Scan rebuilds a new result from currently available canonical MLS records; it does not reproduce custom MLS data, saved outlier edits, or historical pricing results.")
 
 def library_view():
     st.subheader("Community library")
@@ -316,29 +390,51 @@ def scan_view():
     if not warehouse_ready():
         st.info("Configure the read-only warehouse credential to enable live market scans.")
     subject=st.session_state.get("draft_subject") or {}
+    prefill=st.session_state.get("scan_prefill") or {}
+    if prefill:
+        st.info(f"Saved TMA settings loaded: {prefill.get('name') or 'Market area'}. Review before running a fresh MLS-only scan.")
+        if prefill.get("product_review_needed"):
+            st.warning("Desktop TMA contains mixed product buckets. Choose the resale category to analyze; mobile does not combine them into one trend.")
     with st.expander("1 · Market area",expanded=True):
-        mode=st.radio("Geography",["City + state","ZIP code","Coordinates + radius"],horizontal=False)
+        geography_options=["City + state","ZIP code","Coordinates + radius"]
+        mode=st.radio("Geography",geography_options,index=geography_options.index(prefill.get("mode","City + state")),horizontal=False)
         if mode=="City + state":
-            city=st.text_input("City",value=st.session_state.get("scan_city",""))
-            state=st.text_input("State",value="CA",max_chars=2)
+            city=st.text_input("City",value=prefill.get("city",st.session_state.get("scan_city","")))
+            state=st.text_input("State",value=prefill.get("state","CA"),max_chars=2)
             location={"city":city,"state":state}
         elif mode=="ZIP code":
-            zipcode=st.text_input("ZIP code",max_chars=5)
+            zipcode=st.text_input("ZIP code",value=prefill.get("zip_code",""),max_chars=5)
             location={"zipCode":zipcode}
         else:
-            center=st.text_input("Latitude, longitude",placeholder="32.8384, -116.9739")
-            radius=st.slider("Radius (miles)",0.5,15.0,3.0,0.5)
+            center=st.text_input("Latitude, longitude",value=prefill.get("center_coordinates",""),placeholder="32.8384, -116.9739")
+            radius=st.slider("Radius (miles)",0.5,15.0,min(15.,max(0.5,round(float(prefill.get("radius",3.0))*2)/2)),0.5)
             location={}
             try:
                 lat,lon=[float(x.strip()) for x in center.split(",")]
                 if -90<=lat<=90 and -180<=lon<=180:
                     location={"latitude":lat,"longitude":lon,"radius":radius}
             except (ValueError,TypeError):pass
-        chosen_product=st.radio("Resale category",["SFD","Attached","Detached Condo"],horizontal=True)
-        period=st.radio("Closed-sale period",["Last 12 months","Last 6 months","Last 24 months"],index=0,horizontal=True)
-        days={"Last 6 months":183,"Last 12 months":365,"Last 24 months":730}[period]
-        end=date.today()
-        start=end-timedelta(days=days)
+        product_options=["SFD","Attached","Detached Condo"]
+        chosen_product=st.radio("Resale category",product_options,index=product_options.index(prefill.get("analysis_product","SFD")),horizontal=True)
+        saved_start = saved_end = None
+        try:
+            if prefill.get("start") and prefill.get("end"):
+                saved_start=date.fromisoformat(prefill["start"])
+                saved_end=date.fromisoformat(prefill["end"])
+                if saved_start > saved_end:
+                    saved_start = saved_end = None
+        except (TypeError,ValueError):
+            pass
+        period_options=["Last 12 months","Last 6 months","Last 24 months"]
+        if saved_start and saved_end:
+            period_options.insert(0,"Saved TMA dates")
+        period=st.radio("Closed-sale period",period_options,index=0 if saved_start else 0,horizontal=True)
+        if period == "Saved TMA dates":
+            start,end=saved_start,saved_end
+        else:
+            days={"Last 6 months":183,"Last 12 months":365,"Last 24 months":730}[period]
+            end=date.today()
+            start=end-timedelta(days=days)
         st.caption(f"Historical sale window: {start} to {end}. Canonical MLS only.")
     with st.expander("2 · Subject (optional)",expanded=False):
         name=st.text_input("Subject community name",value=subject.get("name",""))
