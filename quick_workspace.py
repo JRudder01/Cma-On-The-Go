@@ -2,6 +2,7 @@
 from __future__ import annotations
 from datetime import date,timedelta
 import json
+import hashlib
 import streamlit as st
 from data_access import configured,run_tma,current_plans,search_communities,suggest_communities
 from mobile_chart import render_analysis
@@ -41,7 +42,10 @@ def subject_price_player(plans, signature):
         proposals=price_proposals(plans,model,offset)
         eligible=[p for p in proposals if "target_price" in p]
         skipped=[p for p in proposals if "target_price" not in p]
-        st.caption(f"{len(eligible)} of {len(proposals)} subject plans qualify for this trendline.")
+        extrapolated=[p for p in eligible if p.get("extrapolated")]
+        normal=[p for p in eligible if not p.get("extrapolated")]
+        st.caption(f"{len(normal)} within the observed SF range · "
+                   f"{len(extrapolated)} extrapolated · {len(skipped)} unavailable")
         # Native vertical cards avoid a wide, horizontally scrolling dataframe
         # on narrow phone screens and retain all price figures in view.
         for p in proposals:
@@ -50,21 +54,46 @@ def subject_price_player(plans, signature):
                 existing=(f"${p['existing_price']:,.0f}"
                           if p['existing_price']>0 else "Not entered")
                 if "target_price" in p:
+                    if p.get("extrapolated"):
+                        st.caption("Extrapolated estimate · outside observed closed MLS sale sizes")
                     st.caption(f"Current: {existing} · Trend: ${p['trend_price']:,.0f}")
                     st.write(f"**Suggested: ${p['target_price']:,.0f}** "
                              f"({offset:+d}% versus trend)")
+                    if p.get("extrapolated"):
+                        st.caption(
+                            f"Extrapolated {p['distance_sf']:,.0f} SF "
+                            f"({p['distance_pct']:.1f}%) beyond the nearest supported boundary. "
+                            f"No qualifying closed MLS sales at this size were found within "
+                            f"the selected TMA, property category and analysis period "
+                            f"(observed SF range: {p['support_min_sf']:,.0f}–"
+                            f"{p['support_max_sf']:,.0f}). "
+                            "The existing trend equation is extended beyond the observed "
+                            "data; pricing uncertainty may be substantially greater."
+                        )
                 else:
                     st.caption(f"Current: {existing}")
                     st.write("**Not automatically priced**")
                     st.caption(f"{p.get('reason','Not eligible')}. "
                                "You can enter a price manually, or choose a different eligible trendline.")
         if skipped:
-            st.info(f"{len(skipped)} plan(s) fall outside this model's supported "
-                    "range or cannot be priced automatically. They will be left "
-                    "unchanged; eligible plans can still be priced.")
-        label=f"Apply suggested prices to {len(eligible)} eligible plan(s)"
-        if st.button(label,disabled=not eligible,use_container_width=True,
-                     type="primary",key="unified_player_apply"):
+            st.info(f"{len(skipped)} plan(s) cannot be priced from this equation "
+                    "and will be left unchanged.")
+        acknowledged=True
+        if extrapolated:
+            # A changed reference, offset or plan invalidates prior acknowledgment.
+            terms=[signature,choice,offset,[
+                (p["index"],p["sqft"],p.get("target_price"),p.get("extrapolated"))
+                for p in proposals]]
+            digest=hashlib.sha256(json.dumps(terms,sort_keys=True).encode()).hexdigest()[:16]
+            acknowledged=st.checkbox(
+                "I understand the marked estimates extrapolate beyond observed "
+                "closed MLS sale sizes and may be less reliable.",
+                key=f"unified_player_ack_{digest}"
+            )
+        label=f"Apply suggested prices to {len(eligible)} plan(s)"
+        if st.button(label,disabled=not eligible or not acknowledged,
+                     use_container_width=True,type="primary",
+                     key="unified_player_apply"):
             # Only stage supported rows; keep manual prices on skipped plans.
             st.session_state["unified_pending_plan_prices"]={
                 plans[p["index"]]["input_index"]:int(p["target_price"])
@@ -72,7 +101,8 @@ def subject_price_player(plans, signature):
             }
             st.session_state["unified_player_applied"]=len(eligible)
             st.rerun()
-        st.caption("Uses the existing plan sizes and the validated market model. "
+        st.caption("Estimates use the same validated TMA equation without refitting. "
+                   "Extrapolation does not inherit the model’s within-range reliability. "
                    "No new MLS query or desktop-project changes.")
 
 
