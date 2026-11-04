@@ -100,6 +100,10 @@ def subject_price_player(plans, signature):
                 plans[p["index"]]["input_index"]:int(p["target_price"])
                 for p in eligible
             }
+            st.session_state["unified_pending_pricing_reference"]={
+                "tma_name":result["name"],"product":choice,
+                "percent":int(offset),"market_signature":signature,
+            }
             st.session_state["unified_player_applied"]=len(eligible)
             st.rerun()
         st.caption("Estimates use the same validated TMA equation without refitting. "
@@ -111,6 +115,9 @@ def subject_inputs(signature: str):
     name=st.text_input("Subject community name",key="unified_subject_name")
     count=st.number_input("Number of subject plans",0,8,value=0,step=1,key="unified_plan_count")
     pending=st.session_state.pop("unified_pending_plan_prices",{})
+    pricing_ref=st.session_state.pop("unified_pending_pricing_reference",None)
+    if pricing_ref and st.session_state.get("unified_quick_draft"):
+        st.session_state["unified_quick_draft"]["applied_pricing_reference"]=pricing_ref
     for i,price in pending.items():
         st.session_state[f"unified_plan_price_{i}"]=int(price)
     plans=[]
