@@ -199,7 +199,7 @@ def search_communities(query: str = "", city: str = "", limit: int = 100) -> lis
        GROUP BY c.id, c.name, c.city, c.state, c.zip_code, c.product_type,
                 c.latitude, c.longitude, b.name
        ORDER BY c.city, c.name LIMIT :limit
-    """, {"query": f"%{query.strip().lower()}%", "city": city.strip().lower(), "limit": min(max(1, limit), 100)})
+    """, {"query": f"%{query.strip().lower()}%", "city": city.strip().lower(), "limit": min(max(1, limit), 500)})
 
 
 
