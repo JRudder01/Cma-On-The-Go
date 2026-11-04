@@ -254,3 +254,19 @@ def test_resale_scatter_inventory_and_viewport_respect_category_selection(monkey
     inv,_,_=make_chart([market],{},[],"Inventory",6.5,20.)
     assert list(inv.data[0].y)==[1,1,2]
     assert list(inv.data[0].x)==["Active","Pending","Closed"]
+
+
+def test_multi_tma_inventory_legend_keeps_mobile_space():
+    entries=[]
+    for i in range(5):
+        frame=pd.DataFrame({
+            "Standard Status":["Active","Pending","Closed"],
+            "TMA Type":["SFD","SFD","SFD"],
+        })
+        entries.append({"name":f"TMA {i+1}",
+                        "products":["SFD"],
+                        "result":SimpleNamespace(available=True,mls=frame)})
+    fig,_,_=make_chart(entries,{},[],"Inventory",6.5,20.)
+    assert len(fig.data)==5
+    assert fig.layout.legend.y<0
+    assert fig.layout.margin.b>=100
