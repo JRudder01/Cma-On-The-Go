@@ -48,5 +48,10 @@ if not st.session_state.get("authorized", False):
             st.error("Incorrect passphrase.")
     st.stop()
 
-# Authentication succeeded. Render the protected field application.
-from mobile_app import *  # noqa: E402,F401,F403
+# Run the complete UI script on EVERY Streamlit rerun.
+# A normal Python import caches a module after its first execution. Streamlit
+# reruns app.py on widget interactions, so importing mobile_app once would
+# leave subsequent reruns with no rendered interface.
+import runpy
+
+runpy.run_module("mobile_app", run_name="__main__")
