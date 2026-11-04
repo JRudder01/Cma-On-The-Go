@@ -176,7 +176,9 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 fig.add_trace(go.Scatter(x=[x],y=[y],mode="markers",
                     marker=dict(symbol="star",size=15,color="#dc2626",line=dict(color="white",width=1)),
                     showlegend=False,hovertemplate=f"Subject {j+1} · {p.get('name') or 'Plan'}: %{{x:,.0f}} SF · $%{{y:,.0f}}<extra></extra>"))
-                point_labels.append((x,y,str(p.get("name") or f"Subject {j+1}"),True))
+                raw_name=str(p.get("name") or f"Subject {j+1}").strip()
+                display_name=f"{int(x):,} SF" if raw_name.replace(",","").isdigit() else raw_name
+                point_labels.append((x,y,display_name,True))
         for i,(_,group) in enumerate(community_groups(plans)):
             pts=[pt for p in group if (pt:=_positive_point(p,metric))]
             if not pts:
