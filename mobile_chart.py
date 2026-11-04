@@ -60,6 +60,16 @@ def _positive_point(plan: dict, metric: str):
     return None
 
 
+def _sorted_plan_points(rows: list[dict], metric: str) -> list[tuple[float,float,dict]]:
+    """Valid plans in ascending home-size order; never interpolate absent plans."""
+    points=[]
+    for plan in rows:
+        pt=_positive_point(plan,metric)
+        if pt is not None:
+            points.append((pt[0],pt[1],plan))
+    return sorted(points,key=lambda point: point[0])
+
+
 def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) -> None:
     """Mobile-safe labels: compact names, bounded count, separated in chart pixels.
 
@@ -169,26 +179,49 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                     hovertemplate=trace_name+": %{x:,.0f} SF · $%{y:,.0f}<extra></extra>"))
                 if not model.get("automatic_pricing_eligible"):
                     diagnostics.append((trace_name,"Descriptive trend only; not certified for pricing"))
-        for j,p in enumerate((draft.get("subject_plans") or [])[:8]):
-            pt=_positive_point(p,metric)
-            if pt:
-                x,y=pt
-                fig.add_trace(go.Scatter(x=[x],y=[y],mode="markers",
-                    marker=dict(symbol="star",size=15,color="#dc2626",line=dict(color="white",width=1)),
-                    showlegend=False,hovertemplate=f"Subject {j+1} · {p.get('name') or 'Plan'}: %{{x:,.0f}} SF · $%{{y:,.0f}}<extra></extra>"))
-                raw_name=str(p.get("name") or f"Subject {j+1}").strip()
-                display_name=f"{int(x):,} SF" if raw_name.replace(",","").isdigit() else raw_name
-                point_labels.append((x,y,display_name,True))
+        # Community product ladders are straight connectors between listed
+        # plans, not statistical trend models. Each community stays separate.
+        subject_points=_sorted_plan_points((draft.get("subject_plans") or [])[:8],metric)
+        subject_name=str(draft.get("name") or "").strip() or "Subject"
+        if subject_points:
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in subject_points],
+                y=[p[1] for p in subject_points],
+                mode="lines+markers" if len(subject_points)>=2 else "markers",
+                line=dict(color="#dc2626",width=2.5),
+                marker=dict(symbol="star",size=15,color="#dc2626",
+                            line=dict(color="white",width=1)),
+                name=subject_name+" · plans",showlegend=False,
+                text=[str(p[2].get("name") or f"Plan {j+1}")
+                      for j,p in enumerate(subject_points)],
+                customdata=[[float(p[2].get("base_price") or 0)] for p in subject_points],
+                hovertemplate=subject_name+" · %{text}: %{x:,.0f} SF · $%{customdata[0]:,.0f}<extra></extra>"
+            ))
+            mid=subject_points[len(subject_points)//2]
+            point_labels.append((mid[0],mid[1],subject_name,True))
+
         for i,(_,group) in enumerate(community_groups(plans)):
-            pts=[pt for p in group if (pt:=_positive_point(p,metric))]
+            pts=_sorted_plan_points(group,metric)
             if not pts:
                 continue
-            fig.add_trace(go.Scatter(x=[p[0] for p in pts],y=[p[1] for p in pts],
-                mode="markers",marker=dict(symbol="square",size=11,
-                    color=COMP_COLORS[i % len(COMP_COLORS)],line=dict(color="white",width=1)),
-                showlegend=False,hovertemplate=f"C{i+1} · {group[0].get('community_name') or 'Community'}: %{{x:,.0f}} SF · $%{{y:,.0f}}<extra></extra>"))
-            x,y=pts[len(pts)//2]
-            point_labels.append((x,y,str(group[0].get("community_name") or f"Comp {i+1}"),False))
+            community_name=str(group[0].get("community_name") or f"Comp {i+1}")
+            color=COMP_COLORS[i % len(COMP_COLORS)]
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in pts],
+                y=[p[1] for p in pts],
+                mode="lines+markers" if len(pts)>=2 else "markers",
+                line=dict(color=color,width=1.8),
+                opacity=.78,
+                marker=dict(symbol="square",size=11,color=color,
+                            line=dict(color="white",width=1)),
+                name=community_name+" · plans",showlegend=False,
+                text=[str(p[2].get("name") or f"Plan {j+1}")
+                      for j,p in enumerate(pts)],
+                customdata=[[float(p[2].get("base_price") or 0)] for p in pts],
+                hovertemplate=community_name+" · %{text}: %{x:,.0f} SF · $%{customdata[0]:,.0f}<extra></extra>"
+            ))
+            mid=pts[len(pts)//2]
+            point_labels.append((mid[0],mid[1],community_name,False))
         _annotate_sparse(fig,point_labels)
         fig.update_xaxes(title="Home size (SF)",gridcolor="#edf2f7")
         fig.update_yaxes(title="Price ($)" if metric=="Price" else "$ per SF",tickprefix="$",gridcolor="#edf2f7")
