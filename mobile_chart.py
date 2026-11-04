@@ -455,10 +455,21 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 marker_color=TMA_COLORS[i % len(TMA_COLORS)]))
         fig.update_layout(barmode="group")
         fig.update_yaxes(title="MLS records")
-    fig.update_layout(template="plotly_white",height=460 if metric in ("Price/SF","Price","Payment") else 390,
-                      margin=dict(l=6,r=6,t=24,b=25),font=dict(size=11),
-                      legend=dict(orientation="h",y=1.05,x=0,font=dict(size=10)),
-                      hovermode="closest",dragmode="pan")
+    # Keep the legend INSIDE the Plotly figure. Anchoring below the axes
+    # avoids overlap with the mobile modebar while retaining the figure's
+    # interactive/responsive legend (including when expanded).
+    show_market_legend=metric in ("Price/SF","Price")
+    n_market_lines=len(trend_labels) if show_market_legend else 0
+    legend_bottom=100+max(0,n_market_lines-3)*10 if n_market_lines else 40
+    fig.update_layout(
+        template="plotly_white",
+        height=(460 if metric in ("Price/SF","Price","Payment") else 390)
+               + (legend_bottom-40 if n_market_lines else 0),
+        margin=dict(l=6,r=6,t=24,b=legend_bottom),font=dict(size=11),
+        legend=dict(orientation="h",y=-0.19,yanchor="top",x=0,xanchor="left",
+                    font=dict(size=10),tracegroupgap=4),
+        hovermode="closest",dragmode="pan"
+    )
     _set_default_focus(fig,series,draft,plans,metric,rate,down)
     return fig,trend_labels,diagnostics
 
@@ -500,6 +511,15 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         rate=st.slider("Illustrative interest rate (%)",3.,12.,6.5,.125)
         down=st.slider("Down payment (%)",0,50,20,5)
         st.caption("30-year principal and interest only. Excludes HOA, taxes, insurance and incentives.")
+    if scope=="Quick Scan":
+        applied=draft.get("applied_pricing_reference") or {}
+        if applied and applied.get("tma_name")==series[0].get("name"):
+            percent=applied.get("percent",0)
+            label=f"{percent:+g}%" if isinstance(percent,(int,float)) else str(percent)
+            st.caption(
+                f"Subject pricing reference: {applied['tma_name']} · "
+                f"{applied['product']} ({label} versus trendline)"
+            )
     fig,lines,diagnostics=make_chart(series,draft,plans,metric,rate,down)
     st.plotly_chart(fig,use_container_width=True,config=_plotly_config())
     st.caption("Drag to pan · Use the + / − chart buttons to zoom · Home to reset. Scroll outside the chart to move down the page.")
