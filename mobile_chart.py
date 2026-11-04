@@ -173,7 +173,9 @@ def _set_default_focus(fig: go.Figure, series: list[dict],
                 continue
             if not {"Standard Status","Living Area","Close Price"}.issubset(frame.columns):
                 continue
-            closed=frame[frame["Standard Status"].eq("Closed")]
+            products=entry.get("products") or ["SFD"]
+            closed=frame[frame["Standard Status"].eq("Closed") &
+                         frame["TMA Type"].isin(products)]
             sizes=pd.to_numeric(closed["Living Area"],errors="coerce")
             prices=pd.to_numeric(closed["Close Price"],errors="coerce")
             valid=sizes.gt(0)&prices.gt(0)&sizes.notna()&prices.notna()
@@ -256,8 +258,12 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 continue
             color=TMA_COLORS[i % len(TMA_COLORS)]
             products=entry.get("products") or ["SFD"]
-            sold=frame[frame["Standard Status"].eq("Closed")]
-            inventory=frame[frame["Standard Status"].isin(["Active","Pending"])]
+            # The warehouse assembly intentionally loads broad MLS categories;
+            # the visible scatter, trends and inventory MUST use the selected
+            # analysis classes rather than mixing in unrelated home types.
+            filtered=frame[frame["TMA Type"].isin(products)]
+            sold=filtered[filtered["Standard Status"].eq("Closed")]
+            inventory=filtered[filtered["Standard Status"].isin(["Active","Pending"])]
             ycol="Close Price" if metric=="Price" else "Price per Sq Ft"
             if not sold.empty:
                 fig.add_trace(go.Scattergl(x=sold["Living Area"],y=sold[ycol],
@@ -449,7 +455,9 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
             frame=entry["result"].mls
             if frame.empty:
                 continue
-            counts=frame["Standard Status"].value_counts()
+            products=entry.get("products") or ["SFD"]
+            selected=frame[frame["TMA Type"].isin(products)]
+            counts=selected["Standard Status"].value_counts()
             fig.add_trace(go.Bar(name=entry["name"],x=["Active","Pending","Closed"],
                 y=[int(counts.get(k,0)) for k in ["Active","Pending","Closed"]],
                 marker_color=TMA_COLORS[i % len(TMA_COLORS)]))
