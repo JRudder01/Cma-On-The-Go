@@ -10,6 +10,60 @@ from price_player import eligible_market_models, price_proposals
 CATEGORIES=("SFD","Attached","Detached Condo")
 
 
+
+def market_signature(mode, location, products, start, end):
+    """Bind suggestions to the analysis, not whichever area is currently typed."""
+    return json.dumps([mode,location,products,str(start),str(end)],sort_keys=True)
+
+
+def subject_price_player(plans, signature):
+    with st.expander("Price Player · % above/below TMA trendline"):
+        if not plans:
+            st.caption("Enter one or more subject plan sizes first.")
+            return
+        result=st.session_state.get("unified_quick_result") or {}
+        if result.get("signature")!=signature:
+            st.info("Run Analyze market to enable pricing from the current TMA.")
+            return
+        models=st.session_state.get("unified_quick_price_models") or {}
+        if not models:
+            st.warning("No selected TMA trends passed the automatic-pricing quality checks.")
+            for product,reason in (st.session_state.get("unified_quick_price_warnings") or {}).items():
+                st.caption(f"{product}: {reason}")
+            return
+        products=[p for p in result.get("products",[]) if p in models]
+        choice=st.selectbox("Reference trendline",products,
+            format_func=lambda p:f"{result['name']} · {p}",key="unified_player_category")
+        offset=st.slider("Price relative to trend (%)",-25,25,0,1,key="unified_player_percent")
+        model=models[choice]
+        st.caption(f"Supported range: {model['sf_min']:,.0f}–{model['sf_max']:,.0f} SF "
+                   f"· Reliability: {model.get('pricing_reliability','Eligible')}")
+        proposals=price_proposals(plans,model,offset)
+        rows=[]
+        for p in proposals:
+            rows.append({
+                "Plan":p["name"],
+                "SF":f"{p['sqft']:,.0f}",
+                "Existing":f"${p['existing_price']:,.0f}" if p["existing_price"] else "—",
+                "Trend":f"${p['trend_price']:,.0f}" if "trend_price" in p else "—",
+                "Suggested":f"${p['target_price']:,.0f}" if "target_price" in p else p.get("reason","Unavailable"),
+            })
+        st.dataframe(rows,hide_index=True,use_container_width=True)
+        blocked=any("target_price" not in p for p in proposals)
+        if blocked:
+            st.warning("At least one plan is outside the model's supported SF range. "
+                       "No prices will be applied until every plan is eligible.")
+        if st.button("Apply prices to subject plans",disabled=blocked,
+                     use_container_width=True,type="primary",key="unified_player_apply"):
+            st.session_state["unified_pending_plan_prices"]={
+                plans[p["index"]]["input_index"]:int(p["target_price"]) for p in proposals
+            }
+            st.session_state["unified_player_applied"]=True
+            st.rerun()
+        st.caption("Uses the existing plan sizes and the validated market model. "
+                   "No new MLS query or desktop-project changes.")
+
+
 def subject_inputs(signature: str):
     name=st.text_input("Subject community name",key="unified_subject_name")
     count=st.number_input("Number of subject plans",0,8,value=0,step=1,key="unified_plan_count")
