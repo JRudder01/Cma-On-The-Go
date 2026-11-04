@@ -4,17 +4,20 @@ The Streamlit frontend should be rebuilt whenever a widget changes. A simple
 Python import of mobile_app caches the rendered UI and loses it on reruns.
 """
 from streamlit.testing.v1 import AppTest
+from pathlib import Path
+
+APP_ENTRY = Path(__file__).resolve().parents[1] / "app.py"
 
 
 def test_locked_page_is_rendered():
-    app = AppTest.from_file("app.py", default_timeout=30)
+    app = AppTest.from_file(APP_ENTRY, default_timeout=30)
     app.run()
     assert not app.exception, [str(e.message) for e in app.exception]
     assert any("CMA On The Go" in header.value for header in app.title)
 
 
 def test_full_app_rebuilds_on_reruns_without_database():
-    app = AppTest.from_file("app.py", default_timeout=30)
+    app = AppTest.from_file(APP_ENTRY, default_timeout=30)
     app.secrets["ACCESS_PASSWORD"] = "local-test-only-password"
     app.session_state["authorized"] = True
     app.run()
