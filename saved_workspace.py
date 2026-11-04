@@ -44,7 +44,7 @@ def saved_market_definition(area,project,item):
         for value in inputs:
             if value in (None,""):
                 continue
-            for token in re.split(r"[,;|\\s]+",str(value).strip()):
+            for token in re.split(r"[,;|\s]+",str(value).strip()):
                 if not token:
                     continue
                 if not (len(token)==5 and token.isdigit()):
@@ -78,7 +78,7 @@ def saved_market_definition(area,project,item):
         token=str(value).casefold()
         if ("single family" in token or "sfd" in token or ("detached" in token and "condo" not in token)) and "SFD" not in products:
             products.append("SFD")
-        if ("townhouse" in token or "attached" in token) and "Attached" not in products:
+        if ("townhouse" in token or "attached" in token or token.strip() in ("condo","condominium")) and "Attached" not in products:
             products.append("Attached")
         if "detached condo" in token and "Detached Condo" not in products:
             products.append("Detached Condo")
