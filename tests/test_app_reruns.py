@@ -111,7 +111,7 @@ def test_price_player_reuses_plan_fields_and_applies_without_warehouse():
     app.run()
     assert not app.exception, [str(e.message) for e in app.exception]
     assert any(w.label=="Reference trendline" for w in app.selectbox)
-    apply=next(w for w in app.button if w.label.startswith("Apply suggested prices to 1 eligible"))
+    apply=next(w for w in app.button if w.label.startswith("Apply suggested prices to 1 plan"))
     assert not apply.disabled
     apply.click().run()
     assert not app.exception, [str(e.message) for e in app.exception]
@@ -148,11 +148,14 @@ def test_price_player_applies_eligible_plans_when_one_is_out_of_range():
     }}
     app.run()
     assert not app.exception, [str(e.message) for e in app.exception]
-    apply=next(w for w in app.button if w.label.startswith("Apply suggested prices to 2 eligible"))
+    acknowledgment=next(c for c in app.checkbox if c.label.startswith("I understand the marked estimates"))
+    assert not acknowledgment.value
+    acknowledgment.set_value(True).run()
+    apply=next(w for w in app.button if w.label.startswith("Apply suggested prices to 3 plan"))
     assert not apply.disabled
     apply.click().run()
     assert not app.exception, [str(e.message) for e in app.exception]
     prices=[w.value for w in app.number_input if w.label=="Asking price ($)"]
-    assert prices==[675000,850000,0]
+    assert prices==[675000,850000,1025000]
     updated=app.session_state["unified_quick_draft"]["subject_plans"]
-    assert [p["base_price"] for p in updated]==[675000,850000,0]
+    assert [p["base_price"] for p in updated]==[675000,850000,1025000]
