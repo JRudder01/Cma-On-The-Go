@@ -27,10 +27,10 @@ def get_access_password() -> str:
 
 password = get_access_password()
 
-if len(password) < 14:
+if len(password) < 4:
     st.title("CMA On The Go")
     st.info("The application is installed, but access has not yet been configured.")
-    st.write("Add a unique `ACCESS_PASSWORD` of at least 14 characters in this app's **Settings → Secrets**.")
+    st.write("Add a unique `ACCESS_PASSWORD` of at least 4 characters in this app's **Settings → Secrets**.")
     st.caption("No market data or production warehouse connection has been opened.")
     st.stop()
 
