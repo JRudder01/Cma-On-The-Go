@@ -16,7 +16,7 @@ import streamlit as st
 
 from core.outlier_engine import analyze_tma_outliers
 from core.trend_model import fit_resale_trend, trend_points
-from data_access import configured, current_plans, list_projects, load_project, run_tma, search_communities
+from data_access import configured, current_plans, list_projects, load_project, run_tma, search_communities, suggest_communities
 
 
 def warehouse_ready() -> bool:
@@ -266,15 +266,22 @@ def project_view():
         st.info("Configure the existing restricted read-only warehouse connection first.")
         return
     term = st.text_input("Search project or city", placeholder="Search saved analyses…")
-    if st.button("Search saved projects", key="search_saved_projects"):
+    if st.button("Search saved projects", key="search_saved_projects", use_container_width=True):
         try:
             with st.spinner("Retrieving saved projects…"):
                 st.session_state["saved_project_rows"] = list_projects(term)
+                st.session_state["saved_project_last_query"] = term
+                st.session_state.pop("saved_project_error", None)
         except Exception as exc:
-            st.error(clean_error(exc))
+            st.session_state["saved_project_error"] = type(exc).__name__
+    if st.session_state.get("saved_project_error"):
+        st.error("Project search could not retrieve data (" + st.session_state["saved_project_error"] + "). Other library searches may still work.")
     records = st.session_state.get("saved_project_rows", [])
     if not records:
-        st.caption("Use Search saved projects to load the matching list.")
+        if "saved_project_last_query" in st.session_state:
+            st.info("No saved projects matched that search. Clear the search box and search again to show all projects.")
+        else:
+            st.caption("Press Search saved projects to retrieve all available desktop projects.")
         return
     st.caption(f"{len(records)} matching saved project(s). Tap one to open its desktop snapshot.")
     with st.container(height=290, border=True):
@@ -312,6 +319,12 @@ def project_view():
             "sf": 0, "price": 0,
         }
         st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+        st.session_state["draft_subject_plans"] = [
+            {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
+             "sqft": int(float(p.get("SF") or 0)),
+             "base_price": int(float(p.get("Base Price") or 0))}
+            for i, p in enumerate(subject_plans[:8]) if isinstance(p, dict) and p.get("Include", True)
+        ]
         st.rerun()
 
     st.write("**Saved target market areas**")
@@ -339,6 +352,12 @@ def project_view():
                         "sf": 0, "price": 0,
                     }
                     st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
+                    st.session_state["draft_subject_plans"] = [
+                        {"name": str(p.get("Plan/Offering") or f"Plan {i+1}"),
+                         "sqft": int(float(p.get("SF") or 0)),
+                         "base_price": int(float(p.get("Base Price") or 0))}
+                        for i, p in enumerate(subject_plans[:8]) if isinstance(p, dict) and p.get("Include", True)
+                    ]
                     st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
@@ -415,7 +434,12 @@ def scan_view():
                     location={"latitude":lat,"longitude":lon,"radius":radius}
             except (ValueError,TypeError):pass
         product_options=["SFD","Attached","Detached Condo"]
-        chosen_product=st.radio("Resale category",product_options,index=product_options.index(prefill.get("analysis_product","SFD")),horizontal=True)
+        st.caption("Resale categories · choose one or more")
+        chosen_products=[
+            category for category in product_options
+            if st.checkbox(category, value=(category == prefill.get("analysis_product","SFD")),
+                           key="scan_product_"+category.replace(" ","_").lower())
+        ]
         saved_start = saved_end = None
         try:
             if prefill.get("start") and prefill.get("end"):
@@ -425,12 +449,16 @@ def scan_view():
                     saved_start = saved_end = None
         except (TypeError,ValueError):
             pass
-        period_options=["Last 12 months","Last 6 months","Last 24 months"]
+        period_options=["Last 12 months","Last 6 months","Last 24 months","Custom dates"]
         if saved_start and saved_end:
             period_options.insert(0,"Saved TMA dates")
         period=st.radio("Closed-sale period",period_options,index=0 if saved_start else 0,horizontal=True)
         if period == "Saved TMA dates":
             start,end=saved_start,saved_end
+        elif period == "Custom dates":
+            first=date.today()-timedelta(days=365)
+            start=st.date_input("From (closed sales)",value=first, key="custom_scan_start")
+            end=st.date_input("Through (closed sales)",value=date.today(), key="custom_scan_end")
         else:
             days={"Last 6 months":183,"Last 12 months":365,"Last 24 months":730}[period]
             end=date.today()
@@ -438,8 +466,20 @@ def scan_view():
         st.caption(f"Historical sale window: {start} to {end}. Canonical MLS only.")
     with st.expander("2 · Subject (optional)",expanded=False):
         name=st.text_input("Subject community name",value=subject.get("name",""))
-        sf=st.number_input("Representative home size (SF)",min_value=0,max_value=30000,step=50,value=int(subject.get("sf") or 0))
-        price=st.number_input("Representative asking price ($)",min_value=0,max_value=100000000,step=10000,value=int(subject.get("price") or 0))
+        st.caption("Enter individual subject plans. You can leave the subject blank for MLS-only scans.")
+        previous_plans=st.session_state.get("draft_subject_plans") or []
+        n_subject=st.number_input("Number of subject plans",min_value=0,max_value=8,value=min(8,len(previous_plans)),step=1)
+        subject_plans=[]
+        for i in range(int(n_subject)):
+            prior=previous_plans[i] if i < len(previous_plans) else {}
+            with st.expander(f"Subject plan {i+1}", expanded=(n_subject == 1)):
+                plan_label=st.text_input(f"Plan {i+1} name", value=str(prior.get("name") or f"Plan {i+1}"), key=f"subject_plan_name_{i}")
+                plan_sf=st.number_input(f"Plan {i+1} size (SF)",min_value=0,max_value=30000,step=50,value=int(prior.get("sqft") or 0), key=f"subject_plan_sf_{i}")
+                plan_price=st.number_input(f"Plan {i+1} price ($)",min_value=0,max_value=100000000,step=10000,value=int(prior.get("base_price") or 0), key=f"subject_plan_price_{i}")
+            if plan_sf > 0 and plan_price > 0:
+                subject_plans.append({"name":plan_label,"sqft":plan_sf,"base_price":plan_price})
+        sf=subject_plans[0]["sqft"] if subject_plans else 0
+        price=subject_plans[0]["base_price"] if subject_plans else 0
     with st.expander("3 · Existing competitors",expanded=False):
         if warehouse_ready():
             q=st.text_input("Search communities",placeholder="Builder, community or city…")
@@ -465,17 +505,23 @@ def scan_view():
         else: st.caption("Connect the read-only warehouse to search competitors.")
     if st.button("Analyze market",type="primary",use_container_width=True):
         st.session_state["draft_subject"]={"name":name,"sf":sf,"price":price}
+        st.session_state["draft_subject_plans"]=subject_plans
         if not warehouse_ready():
             st.warning("A read-only warehouse connection is required for live MLS analysis.")
+        elif not chosen_products:
+            st.warning("Choose at least one resale category.")
+        elif start > end:
+            st.warning("Analysis start date must be before the end date.")
         elif not location or (mode=="City + state" and (not city.strip() or not state.strip())) or (mode=="ZIP code" and len(location.get("zipCode",""))!=5):
             st.warning("Enter a valid market geography.")
         else:
             draft={"name":name,"sf":sf,"price":price,"mode":mode,"location":location,
-                "analysis_product":chosen_product,"start":start,"end":end,
+                "analysis_product":chosen_products[0],"analysis_products":chosen_products,"start":start,"end":end,
+                "subject_plans":subject_plans,
                 "competitor_ids":list(st.session_state.get("project_comm_ids") or [])}
             try:
                 with st.spinner("Reading canonical MLS warehouse…"):
-                    assembled=run_tma(mode,location,[chosen_product],start,end)
+                    assembled=run_tma(mode,location,chosen_products,start,end)
                     plans=current_plans(draft["competitor_ids"]) if draft["competitor_ids"] else []
                 st.session_state["market_result"]=assembled
                 st.session_state["market_draft"]=draft
