@@ -327,6 +327,14 @@ def project_view():
             st.session_state["saved_project_error"] = type(exc).__name__
     if st.session_state.get("saved_project_error"):
         st.error("Project search could not retrieve data (" + st.session_state["saved_project_error"] + "). Other library searches may still work.")
+    if st.button("Show all active projects",key="show_all_saved_projects",use_container_width=True):
+        try:
+            with st.spinner("Loading all active projects…"):
+                st.session_state["saved_project_rows"]=list_projects("")
+                st.session_state["saved_project_last_query"]=""
+                st.session_state.pop("saved_project_error",None)
+        except Exception as exc:
+            st.session_state["saved_project_error"]=type(exc).__name__
     records = st.session_state.get("saved_project_rows", [])
     if not records:
         if "saved_project_last_query" in st.session_state:
