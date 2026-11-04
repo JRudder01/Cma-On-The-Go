@@ -61,10 +61,9 @@ def _positive_point(plan: dict, metric: str):
 
 
 def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) -> None:
-    """Place readable labels near markers with collision-checked positions.
+    """Mobile-safe labels: compact names, bounded count, separated in chart pixels.
 
-    Full names remain in the always-visible key; the chart uses compact labels
-    and leader lines so overlapping communities do not obscure trendlines.
+    Full community and plan names stay in the chart key below the graph.
     """
     if not points:
         return
@@ -72,43 +71,44 @@ def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) 
     ys=[p[1] for p in points]
     xmin,xmax=min(xs),max(xs)
     ymin,ymax=min(ys),max(ys)
-    xspan=max(1000.0,xmax-xmin)
-    yspan=max(350.0,ymax-ymin)
-    occupied=[]
-    # Competitor communities first, then subject plans. All keep a marker.
-    ordered=sorted(enumerate(points),key=lambda t:(t[1][3],t[0]))
-    offsets=[(0,-32),(0,35),(-65,-29),(65,-29),(-75,29),(75,29),
-             (-110,0),(110,0)]
-    for idx,(x,y,name,is_subject) in ordered:
-        short=str(name).strip()
-        if len(short)>21:
-            short=short[:20]+"…"
-        if is_subject:
-            short="S"+str(1+sum(1 for p in points[:idx] if p[3]))+" · "+short
-        placed=None
-        for dx,dy in offsets:
-            px=(x-xmin)/xspan+dx/650.0
-            py=(y-ymin)/yspan+dy/390.0
-            width=max(.10,min(.33,len(short)*.012))
-            if px-width/2 < -.04 or px+width/2 > 1.04:
-                continue
-            if py < -.04 or py > 1.06:
-                continue
-            if any(abs(px-ox)<(width+ow)/2+.018 and abs(py-oy)<.075
-                   for ox,oy,ow in occupied):
-                continue
-            placed=(dx,dy,px,py,width)
+    xspan=max(1600.0,xmax-xmin)
+    yspan=max(550.0,ymax-ymin)
+    placed=[]
+    # Competitor names have priority; a few subject labels may fit afterward.
+    for idx,(x,y,name,is_subject) in sorted(enumerate(points),key=lambda p:(p[1][3],p[0])):
+        if len(placed)>=5:
             break
-        if placed is None:
+        label=str(name).strip()
+        if is_subject and label.replace(",","").replace(" ","").isdigit():
+            label=label.replace(",","") + " SF"
+        if len(label)>18:
+            label=label[:17]+"…"
+        # Estimate text width in chart pixels, rather than measuring in data units.
+        width=max(55,min(125,len(label)*6+12))
+        anchor_x=(x-xmin)/xspan*580
+        anchor_y=(y-ymin)/yspan*320
+        choices=[(0,-42),(0,42),(85,-30),(-85,-30),(90,38),(-90,38)]
+        selected=None
+        for dx,dy in choices:
+            cx=anchor_x+dx
+            cy=anchor_y+dy
+            if cx-width/2 < -8 or cx+width/2 > 588 or cy < -10 or cy > 330:
+                continue
+            if any(abs(cx-px)<(width+pw)/2+12 and abs(cy-py)<29
+                   for px,py,pw in placed):
+                continue
+            selected=(dx,dy,cx,cy)
+            break
+        if selected is None:
             continue
-        dx,dy,px,py,width=placed
-        occupied.append((px,py,width))
+        dx,dy,cx,cy=selected
+        placed.append((cx,cy,width))
         fig.add_annotation(
-            x=x,y=y,text=short,showarrow=True,
-            ax=dx,ay=-dy,arrowhead=0,arrowwidth=1,
+            x=x,y=y,text=label,showarrow=True,
+            ax=dx,ay=dy,arrowhead=0,arrowwidth=1,
             arrowcolor="#b91c1c" if is_subject else "#64748b",
             font=dict(size=10,color="#9f1239" if is_subject else "#1e293b"),
-            bgcolor="rgba(255,255,255,0.93)",
+            bgcolor="rgba(255,255,255,0.94)",
             bordercolor="rgba(148,163,184,0.35)",borderpad=3
         )
 
