@@ -210,7 +210,7 @@ def community_suggestion_index() -> list[dict]:
     Reused by community-library and competitor search; 23 active communities
     at initial development size. No prefetch on initial page render.
     """
-    return search_communities("", limit=100)
+    return search_communities("", limit=500)
 
 
 def suggest_communities(query: str, limit: int = 5) -> list[dict]:
