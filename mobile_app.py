@@ -77,76 +77,116 @@ def monthly_pi(price: float, annual_rate: float, down_pct: float = 20.0) -> floa
     return principal / months if rate == 0 else principal * rate / (1 - (1 + rate) ** (-months))
 
 
-def market_fig(frame: pd.DataFrame, model: dict | None, metric: str,
+def market_fig(frame: pd.DataFrame, models: dict, metric: str,
                subject: dict, plans: list[dict], rate: float = 6.5, down_pct: float = 20.) -> go.Figure:
-    fig = go.Figure()
-    closed = frame[frame["Standard Status"].eq("Closed")].copy() if not frame.empty else pd.DataFrame()
-    inventory = frame[frame["Standard Status"].isin(["Active","Pending"])].copy() if not frame.empty else pd.DataFrame()
-    if metric in ("Price", "Price/SF"):
-        pricefield = "Close Price" if metric == "Price" else "Price per Sq Ft"
-        fig.add_trace(go.Scatter(
-            x=closed.get("Living Area", []), y=closed.get(pricefield, []), mode="markers",
-            marker={"size":8,"color":"#64748b","opacity":0.65},
-            name="Closed MLS", text=closed.get("Formatted Address", None),
-            hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>Closed MLS</extra>"
-        ))
+    """Phone-first graphic: model lines + labeled communities; MLS dots as context."""
+    fig=go.Figure()
+    categories=subject.get("analysis_products") or ["SFD"]
+    colors={"SFD":"#2563eb","Attached":"#7c3aed","Detached Condo":"#047857"}
+    closed=frame[frame["Standard Status"].eq("Closed")].copy() if not frame.empty else pd.DataFrame()
+    inventory=frame[frame["Standard Status"].isin(["Active","Pending"])].copy() if not frame.empty else pd.DataFrame()
+    subject_plans=subject.get("subject_plans") or []
+    if metric in ("Price","Price/SF"):
+        pricefield="Close Price" if metric=="Price" else "Price per Sq Ft"
+        if not closed.empty:
+            fig.add_trace(go.Scattergl(
+                x=closed["Living Area"],y=closed[pricefield],mode="markers",
+                marker={"size":5,"color":"rgba(100,116,139,0.20)"},
+                name="Closed MLS (background)",showlegend=False,
+                hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>Closed MLS</extra>"))
         if not inventory.empty:
-            inventory_y = inventory["List Price"] if metric=="Price" else inventory["List Price"]/inventory["Living Area"].replace(0,np.nan)
+            inv_y=inventory["List Price"] if metric=="Price" else inventory["List Price"]/inventory["Living Area"].replace(0,np.nan)
+            fig.add_trace(go.Scattergl(
+                x=inventory["Living Area"],y=inv_y,mode="markers",
+                marker={"size":6,"color":"rgba(217,119,6,0.19)"},
+                name="Inventory (background)",showlegend=False,
+                hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>Inventory asking</extra>"))
+        for product in categories:
+            model=models.get(product)
+            if not model:
+                continue
+            line=trend_points(model,max(100.,float(model["sf_min"])*.9),float(model["sf_max"])*1.1)
+            if line.empty:
+                continue
+            y=line["Price"] if metric=="Price" else line["Price"]/line["SF"]
             fig.add_trace(go.Scatter(
-                x=inventory["Living Area"],y=inventory_y,mode="markers",
-                marker={"symbol":"diamond-open","size":10,"color":"#f59e0b"},
-                name="Active / pending", hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>Inventory asking</extra>"
-            ))
-        if model:
-            line = trend_points(model,max(100.,float(model["sf_min"])*.90),
-                                float(model["sf_max"])*1.10)
-            if not line.empty:
-                y=line["Price"] if metric=="Price" else line["Price"]/line["SF"]
-                fig.add_trace(go.Scatter(x=line["SF"],y=y,mode="lines",
-                    line={"color":"#2563eb","width":3},name="Robust MLS trend"))
-        sf=float(subject.get("sf") or 0)
-        price=float(subject.get("price") or 0)
-        if sf>0 and price>0:
-            fig.add_trace(go.Scatter(x=[sf],y=[price if metric=="Price" else price/sf],
-                mode="markers",name="Subject",marker={"symbol":"star","size":15,"color":"#dc2626"}))
-        for p in plans[:35]:
-            try:
-                x,y=float(p["sqft"]),float(p["base_price"])
-                if x<=0 or y<=0: continue
-                fig.add_trace(go.Scatter(x=[x],y=[y if metric=="Price" else y/x],
-                    mode="markers",name=str(p.get("name") or "New home plan"),
-                    marker={"symbol":"square","size":8,"color":"#0d9488"},
-                    showlegend=False,hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>Current new-home plan</extra>"))
-            except (ValueError, TypeError): continue
-        fig.update_xaxes(title="Living area (SF)",fixedrange=False)
-        fig.update_yaxes(title="Price ($)" if metric=="Price" else "Price per SF ($)",tickprefix="$",fixedrange=False)
-    elif metric == "Payment":
-        candidates = []
-        subject_price = float(subject.get("price") or 0)
-        if subject_price > 0:
-            candidates.append(("Subject", monthly_pi(subject_price,rate,down_pct)))
-        for p in plans[:15]:
-            try:
-                price = float(p["base_price"])
-                if price > 0:
-                    candidates.append((str(p.get("name") or "Plan")[:24], monthly_pi(price,rate,down_pct)))
-            except (TypeError,ValueError): pass
+                x=line["SF"],y=y,mode="lines",name=f"{product} MLS trend",
+                line={"color":colors.get(product,"#2563eb"),"width":4},
+                hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>"+product+" trend</extra>"))
+        for i,p in enumerate(subject_plans[:8]):
+            x,y=float(p.get("sqft") or 0),float(p.get("base_price") or 0)
+            if x<=0 or y<=0:
+                continue
+            label=str(p.get("name") or f"Subject {i+1}")
+            fig.add_trace(go.Scatter(
+                x=[x],y=[y if metric=="Price" else y/x],
+                mode="markers+text",text=[label[:18]],textposition="top center",
+                textfont={"size":11,"color":"#b91c1c"},
+                marker={"symbol":"star","size":15,"color":"#dc2626","line":{"color":"white","width":1}},
+                name=label,showlegend=False,
+                hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>"+label+"</extra>"))
+        grouped={}
+        for p in plans:
+            key=str(p.get("community_id") or "Other")
+            grouped.setdefault(key,[]).append(p)
+        for key, group in list(grouped.items())[:15]:
+            points=[]
+            for p in group:
+                try:
+                    x,y=float(p.get("sqft") or 0),float(p.get("base_price") or 0)
+                    if x>0 and y>0:
+                        points.append((x,y if metric=="Price" else y/x))
+                except (ValueError,TypeError):
+                    continue
+            if not points:
+                continue
+            name=str(group[0].get("community_name") or group[0].get("name") or "New homes")
+            xs=[p[0] for p in points]
+            ys=[p[1] for p in points]
+            fig.add_trace(go.Scatter(
+                x=xs,y=ys,mode="markers",showlegend=False,
+                marker={"size":11,"symbol":"square","color":"#d97706",
+                        "line":{"color":"#ffffff","width":1.5}},
+                hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>"+name+"</extra>"))
+            anchor=len(points)//2
+            fig.add_annotation(
+                x=xs[anchor],y=ys[anchor],text=name[:22],showarrow=True,
+                ax=0,ay=-24,arrowhead=0,arrowwidth=1,
+                font={"size":11,"color":"#92400e"},bgcolor="rgba(255,255,255,0.92)",
+                bordercolor="rgba(217,119,6,0.25)",borderpad=3)
+        fig.update_xaxes(title="Home size (SF)",fixedrange=False,showgrid=True,gridcolor="#eef2f7")
+        fig.update_yaxes(title="Price ($)" if metric=="Price" else "$ per SF",
+                         tickprefix="$",fixedrange=False,showgrid=True,gridcolor="#eef2f7")
+    elif metric=="Payment":
+        candidates=[]
+        for i,p in enumerate(subject_plans[:8]):
+            value=float(p.get("base_price") or 0)
+            if value>0:
+                candidates.append((str(p.get("name") or f"Subject {i+1}"),monthly_pi(value,rate,down_pct),"#dc2626"))
+        for p in plans[:20]:
+            value=float(p.get("base_price") or 0)
+            if value>0:
+                label=f"{p.get('community_name') or 'New home'} · {p.get('name') or 'Plan'}"
+                candidates.append((label[:28],monthly_pi(value,rate,down_pct),"#d97706"))
         if candidates:
             fig.add_trace(go.Bar(x=[x[0] for x in candidates],y=[x[1] for x in candidates],
-                                 marker_color=["#dc2626" if x[0]=="Subject" else "#0d9488" for x in candidates],
-                                 name="P&I estimate"))
+                                 marker_color=[x[2] for x in candidates],
+                                 text=[f"${x[1]:,.0f}" for x in candidates],
+                                 textposition="outside",cliponaxis=False))
         fig.update_yaxes(title="Monthly principal + interest ($)",tickprefix="$",rangemode="tozero")
-        fig.update_xaxes(tickangle=-25)
+        fig.update_xaxes(tickangle=-35)
     else:
         if not frame.empty:
-            counts = frame.groupby("Standard Status").size().reindex(["Active","Pending","Closed"],fill_value=0)
-            fig.add_trace(go.Bar(x=counts.index,y=counts.values,marker_color=["#2563eb","#f59e0b","#64748b"],name="Listings"))
-        fig.update_yaxes(title="Number of MLS records",rangemode="tozero")
+            counts=frame.groupby("Standard Status").size().reindex(["Active","Pending","Closed"],fill_value=0)
+            fig.add_trace(go.Bar(x=counts.index,y=counts.values,marker_color=["#2563eb","#d97706","#94a3b8"],
+                                 text=counts.values,textposition="outside"))
+        fig.update_yaxes(title="MLS records",rangemode="tozero")
     fig.update_layout(
-        margin=dict(l=10,r=10,t=14,b=10),height=370,template="plotly_white",
-        legend=dict(orientation="h",yanchor="bottom",y=1.02,x=0,font=dict(size=10)),
-        font=dict(size=11),dragmode="zoom",hovermode="closest"
-    )
+        height=460 if metric in ("Price","Price/SF") else 400,
+        margin={"l":8,"r":8,"t":28,"b":28},template="plotly_white",
+        legend={"orientation":"h","yanchor":"bottom","y":1.04,"x":0,"font":{"size":11}},
+        font={"size":11},dragmode="zoom",hovermode="closest",
+        paper_bgcolor="white",plot_bgcolor="white")
     return fig
 
 
@@ -160,69 +200,76 @@ def market_lens(result, draft, plans):
     if not result.available:
         st.error("MLS assembly could not be completed. No market conclusion has been generated.")
         return
-    df = result.mls
-    st.caption("Data source: existing CRMLS warehouse • No uploads or warehouse changes")
+    df=result.mls
+    st.caption("Read-only canonical MLS warehouse · no uploads or changes")
     if df.empty:
-        st.warning("No eligible MLS records were found in this geography and period. Do not infer a market trend.")
+        st.warning("No eligible MLS records were found in this geography and period.")
         return
-    sold = df[df["Standard Status"].eq("Closed")].copy()
-    kept_frames=[]
+    products=draft.get("analysis_products") or [draft.get("analysis_product","SFD")]
+    filtered=df[df["TMA Type"].isin(products)].copy()
+    if filtered.empty:
+        st.warning("There are no MLS records in the selected resale categories.")
+        return
+    sold=filtered[filtered["Standard Status"].eq("Closed")].copy()
+    models={}
     excluded=0
-    if not sold.empty and "TMA Type" in sold.columns:
-        for product, part in sold.groupby("TMA Type"):
-            if product not in ("SFD","Attached","Detached Condo"): continue
-            try:
-                tagged,diagnostics=analyze_tma_outliers(part)
-                kept_frames.append(tagged)
-                excluded+=int(diagnostics["auto_excluded"])
-            except ValueError:
-                kept_frames.append(part.assign(Keep=True))
-    retained=pd.concat(kept_frames,ignore_index=True) if kept_frames else pd.DataFrame()
-    # Individual models must not mix incompatible product types.
-    chosen=draft.get("analysis_product","SFD")
-    fit_rows=retained[retained["TMA Type"].eq(chosen)].copy() if not retained.empty else pd.DataFrame()
-    model=fit_resale_trend(fit_rows) if not fit_rows.empty else None
+    for product in products:
+        group=sold[sold["TMA Type"].eq(product)].copy()
+        if group.empty:
+            continue
+        try:
+            tagged,diagnostics=analyze_tma_outliers(group)
+            excluded+=int(diagnostics["auto_excluded"])
+        except ValueError:
+            tagged=group.assign(Keep=True)
+        model=fit_resale_trend(tagged) if not tagged.empty else None
+        if model:
+            models[product]=model
     a,b,c=st.columns(3)
-    a.metric("Closed sales",int(len(sold)))
-    b.metric("Inventory",int(df["Standard Status"].isin(["Active","Pending"]).sum()))
-    c.metric("Model eligible",int(model["row_count"]) if model else 0)
-    st.caption(f"Selected resale model: {chosen}. Outlier flags exclude {excluded} records across categories. No manual outlier review is available in mobile v0.1.")
-    metric=st.segmented_control("Chart",["Price","Price/SF","Inventory","Payment"],default="Price/SF")
-    metric=metric or "Price/SF"
-    # Keep visualization restricted to chosen product so one trend is not paired with other product groups.
-    filtered=df[df["TMA Type"].eq(chosen)].copy()
+    a.metric("Closed sales",len(sold))
+    b.metric("Inventory",int(filtered["Standard Status"].isin(["Active","Pending"]).sum()))
+    c.metric("Trend models",len(models))
+    st.caption("Trendlines are fitted separately for each resale category; never across incompatible products.")
+    metric=st.radio("Market view",["Price/SF","Price","Payment","Inventory"],horizontal=True,key="market_chart_mode")
     rate=6.5
-    down_pct=20.0
+    down_pct=20.
     if metric=="Payment":
         rate=st.slider("Illustrative fixed mortgage rate (%)",3.0,12.0,6.5,0.125)
         down_pct=st.slider("Down payment (%)",0,50,20,5)
-        st.caption("Current-price, 30-year principal-and-interest estimates only; NOT an historical payment trend, and excludes taxes, HOA, CFD, insurance, mortgage insurance and incentives.")
-    fig=market_fig(filtered,model,metric,draft,plans,rate,down_pct)
+        st.caption("Current-price 30-year principal-and-interest illustrations only, not historical payment trends; excludes tax, insurance, HOA, CFD, MI and incentives.")
+    fig=market_fig(filtered,models,metric,draft,plans,rate,down_pct)
     st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":True})
-    if st.button("⛶ Expand chart",use_container_width=True):
+    if st.button("Expand chart",use_container_width=True):
         expanded_chart(fig)
-    if model:
-        if not model.get("automatic_pricing_eligible"):
-            st.warning("A trend was fitted, but automatic pricing is not validated for this sample. Treat it as descriptive only.")
-        else:
-            st.success(f"Trend eligible for review · {model.get('pricing_reliability','Caution')} model reliability")
-        sf=float(draft.get("sf") or 0)
-        if sf>0:
-            predicted=float(model["slope"])*sf+float(model["intercept"])
-            if model["sf_min"]<=sf<=model["sf_max"] and predicted>0:
-                st.metric("Modeled resale price at subject size",f"${predicted:,.0f}")
-                st.caption("Unadjusted resale relationship; not a validated new-home price recommendation.")
-            else:
-                st.info("Subject size is outside the retained trendline support or model output is invalid.")
-    else:
-        st.info("Insufficient retained closed sales or size variation for the desktop-compatible robust trendline (minimum 8 sales and 250 SF spread).")
+    if metric in ("Price/SF","Price"):
+        with st.expander("Chart key and community details",expanded=True):
+            st.caption("Thick colored lines = resale trends · Red stars = subject plans · Orange squares = competitor plans · Faint dots = MLS records.")
+            for p in products:
+                m=models.get(p)
+                if m:
+                    quality="eligible" if m.get("automatic_pricing_eligible") else "descriptive only"
+                    st.write(f"**{p} trend:** {int(m['row_count'])} retained sales · {quality}")
+                else:
+                    st.write(f"**{p} trend:** insufficient eligible closed sales")
+            for community_id in dict.fromkeys(p.get("community_id") for p in plans):
+                group=[p for p in plans if p.get("community_id")==community_id]
+                if group:
+                    name=str(group[0].get("community_name") or "Community")
+                    st.write(f"**{name}:** "+", ".join(f"{p.get('name') or 'Plan'} · {p.get('sqft') or '?'} SF" for p in group[:8]))
+            if draft.get("subject_plans"):
+                st.write("**Subject:** "+", ".join(str(p.get("name") or "Plan") for p in draft["subject_plans"]))
+    st.caption(f"Outlier screening flagged {excluded} closed records. No manual outlier editing in the mobile view.")
+    for p in products:
+        m=models.get(p)
+        if m and not m.get("automatic_pricing_eligible"):
+            st.warning(f"{p}: trend is descriptive only; automatic pricing not validated for this sample.")
     latest=result.stats.get("mls_latest_observed")
     if latest:
         age=(date.today()-latest).days
-        st.caption(f"Last recorded MLS observation: {latest} ({age} days ago).")
-        if age>45: st.warning("Warehouse observations may be stale. Confirm geographic and historical coverage before client use.")
-    st.info("Preliminary field-view analysis. Desktop parity, MLS coverage completeness and pricing adjustments are not yet certified.")
-
+        st.caption(f"Last warehouse MLS observation: {latest} ({age} days ago).")
+        if age>45:
+            st.warning("Warehouse observations may be stale; verify current coverage before client use.")
+    st.info("Preliminary field view; not yet certified to reproduce all desktop pricing adjustments.")
 
 def saved_market_prefill(area: dict, project: dict) -> dict:
     """Extract a read-only desktop TMA definition for mobile MLS-only reanalysis."""
