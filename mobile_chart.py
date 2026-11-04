@@ -132,6 +132,111 @@ def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) 
         )
 
 
+
+def _focus_axis(values, *, low_q: float = .10, high_q: float = .90):
+    """Robust visible range, not full MLS extremes; never filters chart data."""
+    import numpy as np
+    values=np.asarray(list(values),dtype=float)
+    values=values[np.isfinite(values) & (values>0)]
+    if not len(values):
+        return None
+    if len(values)>=10:
+        lo,hi=np.quantile(values,[low_q,high_q])
+    else:
+        lo,hi=float(values.min()),float(values.max())
+    center=(float(lo)+float(hi))/2
+    span=max(float(hi)-float(lo),max(1.,abs(center)*.12))
+    padding=span*.13
+    return (max(0.,center-span/2-padding),center+span/2+padding)
+
+
+def _set_default_focus(fig: go.Figure, series: list[dict],
+                       draft: dict, plans: list[dict],metric: str,
+                       rate: float, down: float) -> None:
+    """Start in the MLS concentration, not at extremes of a distant TMA.
+
+    Subject/competitor points close to the main cluster are included; extreme
+    remote plans remain accessible through the toolbar zoom-out/pan controls.
+    No underlying sales, trend regressions, or Plotly traces are removed.
+    """
+    import numpy as np
+    if metric=="Inventory":
+        return
+    x_sales=[]; y_sales=[]
+    if metric in ("Price","Price/SF"):
+        for entry in series:
+            result=entry.get("result")
+            if not getattr(result,"available",False):
+                continue
+            frame=getattr(result,"mls",None)
+            if frame is None or frame.empty:
+                continue
+            if not {"Standard Status","Living Area","Close Price"}.issubset(frame.columns):
+                continue
+            closed=frame[frame["Standard Status"].eq("Closed")]
+            sizes=pd.to_numeric(closed["Living Area"],errors="coerce")
+            prices=pd.to_numeric(closed["Close Price"],errors="coerce")
+            valid=sizes.gt(0)&prices.gt(0)&sizes.notna()&prices.notna()
+            if valid.any():
+                xs=sizes[valid].astype(float).to_numpy()
+                ys=prices[valid].astype(float).to_numpy()
+                x_sales.extend(xs.tolist())
+                y_sales.extend((ys if metric=="Price" else ys/xs).tolist())
+    # Keep the viewport based on the main body of MLS sales.
+    x_range=_focus_axis(x_sales) if x_sales else None
+    plan_points=[]
+    if metric in ("Price","Price/SF"):
+        for p in (draft.get("subject_plans") or [])+plans:
+            pt=_positive_point(p,metric)
+            if pt is not None:
+                plan_points.append(pt)
+    elif metric=="Payment":
+        for p in (draft.get("subject_plans") or [])+plans:
+            try:
+                sf=float(p.get("sqft") or 0)
+                price=float(p.get("base_price") or 0)
+                if sf>0 and price>0 and isfinite(sf) and isfinite(price):
+                    plan_points.append((sf,monthly_payment(price,rate,down)))
+            except (TypeError,ValueError,OverflowError,ZeroDivisionError):
+                continue
+    if x_range is None:
+        x_range=_focus_axis((p[0] for p in plan_points),low_q=0.,high_q=1.)
+    if x_range is None:
+        return
+    xlo,xhi=x_range
+    span=xhi-xlo
+    # Include nearby subject/competitor plans while avoiding an extreme single
+    # plan forcing the full viewport to become unreadably wide.
+    close_plans=[p for p in plan_points if xlo-.25*span<=p[0]<=xhi+.25*span]
+    if close_plans:
+        xlo=max(0.,min(xlo,min(p[0] for p in close_plans)-.07*span))
+        xhi=max(xhi,max(p[0] for p in close_plans)+.07*span)
+    if metric=="Payment":
+        visible_y=[p[1] for p in plan_points if xlo<=p[0]<=xhi]
+    else:
+        visible_y=[y for x,y in zip(x_sales,y_sales) if xlo<=x<=xhi]
+        visible_y+= [p[1] for p in close_plans]
+    yrange=_focus_axis(visible_y,low_q=.05,high_q=.95)
+    if yrange is None:
+        yrange=_focus_axis((p[1] for p in plan_points))
+    if yrange is None:
+        fig.update_xaxes(range=[xlo,xhi])
+        return
+    ylo,yhi=yrange
+    # Preserve the market-centered view, but show subject/comp prices that are
+    # within the chosen home-size region even when they exceed MLS quantiles.
+    for _,y in close_plans:
+        if ylo<=y<=yhi:
+            continue
+        height=yhi-ylo
+        if ylo-.4*height<=y<=yhi+.4*height:
+            ylo=max(0.,min(ylo,y-.06*height))
+            yhi=max(yhi,y+.06*height)
+    fig.update_xaxes(range=[xlo,xhi])
+    fig.update_yaxes(range=[ylo,yhi])
+
+
+
 def make_chart(series: list[dict], draft: dict, plans: list[dict],
                metric: str, rate: float, down: float):
     fig=go.Figure()
@@ -354,6 +459,7 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                       margin=dict(l=6,r=6,t=24,b=25),font=dict(size=11),
                       legend=dict(orientation="h",y=1.05,x=0,font=dict(size=10)),
                       hovermode="closest",dragmode="pan")
+    _set_default_focus(fig,series,draft,plans,metric,rate,down)
     return fig,trend_labels,diagnostics
 
 
