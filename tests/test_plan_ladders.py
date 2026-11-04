@@ -169,3 +169,44 @@ def test_selected_price_player_trend_extends_dashed_beyond_support(monkeypatch):
     fig,_,_=make_chart([market],draft,[],"Price",6.5,20.)
     assert not any("extrapolated" in (trace.name or "") for trace in fig.data)
 
+
+
+def test_initial_chart_focus_ignores_extreme_mls_sizes():
+    from mobile_chart import _set_default_focus
+    import numpy as np
+    sales=pd.DataFrame({
+        "Standard Status":["Closed"]*103,
+        "Living Area":list(np.linspace(900,3000,100))+[6500,8200,8800],
+        "Close Price":list(np.linspace(450000,1000000,100))+[1500000,1850000,2200000],
+    })
+    fig=go.Figure()
+    fig.add_trace(go.Scatter(x=sales["Living Area"],y=sales["Close Price"],mode="markers"))
+    _set_default_focus(fig,[{"result":SimpleNamespace(available=True,mls=sales)}],
+                       {"subject_plans":[_plan("Subject",1800,800000)]},[],
+                       "Price",6.5,20.)
+    lo,hi=fig.layout.xaxis.range
+    assert 1000 < hi < 4500, (lo,hi)
+    assert lo < 1800 < hi
+    assert len(fig.data[0].x)==103  # data is never thrown away
+
+
+def test_initial_focus_does_not_stretch_for_far_outlier_subject():
+    from mobile_chart import _set_default_focus
+    sales=pd.DataFrame({
+        "Standard Status":["Closed"]*30,
+        "Living Area":list(range(1100,2600,50)),
+        "Close Price":list(range(450000,900000,15000)),
+    })
+    fig=go.Figure()
+    _set_default_focus(fig,[{"result":SimpleNamespace(available=True,mls=sales)}],
+                       {"subject_plans":[_plan("Extreme",9000,3000000)]},[],
+                       "Price",6.5,20.)
+    assert fig.layout.xaxis.range[1]<5000
+
+
+def test_payment_chart_focus_on_plan_ladders_without_mls():
+    subject={"subject_plans":[_plan("A",1400,650000),_plan("B",2000,900000)]}
+    fig,_,_=make_chart(_empty_market(),subject,[],"Payment",6.5,20.)
+    assert fig.layout.xaxis.range[0]<1400
+    assert fig.layout.xaxis.range[1]>2000
+    assert fig.layout.yaxis.range[1]>fig.layout.yaxis.range[0]
