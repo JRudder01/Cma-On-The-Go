@@ -120,8 +120,7 @@ def market_fig(frame: pd.DataFrame, models: dict, metric: str,
             label=str(p.get("name") or f"Subject {i+1}")
             fig.add_trace(go.Scatter(
                 x=[x],y=[y if metric=="Price" else y/x],
-                mode="markers+text",text=[label[:18]],textposition="top center",
-                textfont={"size":11,"color":"#b91c1c"},
+                mode="markers",
                 marker={"symbol":"star","size":15,"color":"#dc2626","line":{"color":"white","width":1}},
                 name=label,showlegend=False,
                 hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>"+label+"</extra>"))
@@ -129,7 +128,8 @@ def market_fig(frame: pd.DataFrame, models: dict, metric: str,
         for p in plans:
             key=str(p.get("community_id") or "Other")
             grouped.setdefault(key,[]).append(p)
-        for key, group in list(grouped.items())[:15]:
+        community_colors=["#b45309","#0f766e","#9333ea","#0369a1","#be185d","#4d7c0f","#9a3412","#475569"]
+        for group_index, (key, group) in enumerate(list(grouped.items())[:15]):
             points=[]
             for p in group:
                 try:
@@ -141,19 +141,14 @@ def market_fig(frame: pd.DataFrame, models: dict, metric: str,
             if not points:
                 continue
             name=str(group[0].get("community_name") or group[0].get("name") or "New homes")
+            group_color=community_colors[group_index % len(community_colors)]
             xs=[p[0] for p in points]
             ys=[p[1] for p in points]
             fig.add_trace(go.Scatter(
                 x=xs,y=ys,mode="markers",showlegend=False,
-                marker={"size":11,"symbol":"square","color":"#d97706",
+                marker={"size":10,"symbol":"square","color":group_color,
                         "line":{"color":"#ffffff","width":1.5}},
                 hovertemplate="%{x:,.0f} SF · $%{y:,.0f}<extra>"+name+"</extra>"))
-            anchor=len(points)//2
-            fig.add_annotation(
-                x=xs[anchor],y=ys[anchor],text=name[:22],showarrow=True,
-                ax=0,ay=-24,arrowhead=0,arrowwidth=1,
-                font={"size":11,"color":"#92400e"},bgcolor="rgba(255,255,255,0.92)",
-                bordercolor="rgba(217,119,6,0.25)",borderpad=3)
         fig.update_xaxes(title="Home size (SF)",fixedrange=False,showgrid=True,gridcolor="#eef2f7")
         fig.update_yaxes(title="Price ($)" if metric=="Price" else "$ per SF",
                          tickprefix="$",fixedrange=False,showgrid=True,gridcolor="#eef2f7")
@@ -243,7 +238,15 @@ def market_lens(result, draft, plans):
         expanded_chart(fig)
     if metric in ("Price/SF","Price"):
         with st.expander("Chart key and community details",expanded=True):
-            st.caption("Thick colored lines = resale trends · Red stars = subject plans · Orange squares = competitor plans · Faint dots = MLS records.")
+            st.caption("Colored trendlines = separate resale markets · Red stars = subject plans · Colored squares = competitor communities · Pale dots = individual MLS records.")
+            for i,plan in enumerate(draft.get("subject_plans") or []):
+                st.write(f"🔴 **S{i+1} · {plan.get('name') or 'Subject plan'}:** {int(plan.get('sqft') or 0):,} SF · ${float(plan.get('base_price') or 0):,.0f}")
+            group_palette=["#b45309","#0f766e","#9333ea","#0369a1","#be185d","#4d7c0f","#9a3412","#475569"]
+            for j,community_id in enumerate(dict.fromkeys(p.get("community_id") for p in plans)):
+                group=[p for p in plans if p.get("community_id")==community_id]
+                if group:
+                    group_name=str(group[0].get("community_name") or "Community")
+                    st.markdown(f'<span style="color:{group_palette[j % len(group_palette)]}">■</span> **C{j+1} · {group_name}**',unsafe_allow_html=True)
             for p in products:
                 m=models.get(p)
                 if m:
@@ -251,13 +254,7 @@ def market_lens(result, draft, plans):
                     st.write(f"**{p} trend:** {int(m['row_count'])} retained sales · {quality}")
                 else:
                     st.write(f"**{p} trend:** insufficient eligible closed sales")
-            for community_id in dict.fromkeys(p.get("community_id") for p in plans):
-                group=[p for p in plans if p.get("community_id")==community_id]
-                if group:
-                    name=str(group[0].get("community_name") or "Community")
-                    st.write(f"**{name}:** "+", ".join(f"{p.get('name') or 'Plan'} · {p.get('sqft') or '?'} SF" for p in group[:8]))
-            if draft.get("subject_plans"):
-                st.write("**Subject:** "+", ".join(str(p.get("name") or "Plan") for p in draft["subject_plans"]))
+            st.caption("Plan details are still available by selecting a point or expanding the view. Legend entries are fixed outside the graph to avoid overlapping labels.")
     st.caption(f"Outlier screening flagged {excluded} closed records. No manual outlier editing in the mobile view.")
     for p in products:
         m=models.get(p)
