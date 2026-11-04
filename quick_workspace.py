@@ -66,8 +66,7 @@ def quick_tma_label(mode: str, location: dict) -> str:
     if mode == "Coordinates + radius":
         radius = float(location["radius"])
         formatted = f"{radius:g}"
-        unit = "mile" if radius == 1 else "miles"
-        return f"TMA {formatted} {unit} radius"
+        return f"TMA {formatted}-mile radius"
     raise ValueError("Unsupported quick-scan geography")
 
 
