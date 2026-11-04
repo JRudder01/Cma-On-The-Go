@@ -54,3 +54,39 @@ def test_invalid_plans_are_excluded_from_ladders():
     plans=[_plan("Zero",0,700000),_plan("Valid",1600,750000),
            _plan("Negative",1900,-1)]
     assert [p[2]["name"] for p in _sorted_plan_points(plans,"Price")]==["Valid"]
+
+
+def test_mobile_chart_visual_hierarchy_emphasizes_communities(monkeypatch):
+    """The background MLS trend must remain less prominent than new-home ladders."""
+    import mobile_chart
+
+    data=pd.DataFrame({
+        "Standard Status":["Closed"]*3,
+        "TMA Type":["SFD"]*3,
+        "Living Area":[1400,1700,2000],
+        "Close Price":[700000,780000,870000],
+        "Price per Sq Ft":[500.,458.82,435.],
+        "List Price":[710000,790000,880000],
+    })
+    result=SimpleNamespace(available=True,mls=data)
+    monkeypatch.setattr(mobile_chart,"analyze_tma_outliers",
+                        lambda group:(group,{"auto_excluded":0}))
+    monkeypatch.setattr(mobile_chart,"fit_resale_trend",
+                        lambda tagged:{"sf_min":1400,"sf_max":2000,
+                                       "automatic_pricing_eligible":True})
+    monkeypatch.setattr(mobile_chart,"trend_points",
+                        lambda model,start,end:pd.DataFrame({
+                            "SF":[1400,2000],"Price":[700000,870000]}))
+
+    subject={"name":"Sample Subject","subject_plans":[
+        _plan("Small",1500,730000),_plan("Large",1900,890000)]}
+    competitor=[_plan("One",1500,720000,4),_plan("Two",2000,900000,4)]
+    fig,_,_=make_chart([{"name":"Local Market","result":result,"products":["SFD"]}],
+                       subject,competitor,"Price",6.5,20.)
+    tma=next(trace for trace in fig.data if trace.name=="Local Market · SFD")
+    subject_line=next(trace for trace in fig.data if trace.name=="Sample Subject · plans")
+    comp_line=next(trace for trace in fig.data if trace.name=="Community 4 · plans")
+    assert tma.opacity < comp_line.opacity
+    assert tma.line.width < comp_line.line.width < subject_line.line.width
+    assert subject_line.marker.size >= 15
+    assert comp_line.marker.size >= 11
