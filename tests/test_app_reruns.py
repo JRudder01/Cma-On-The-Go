@@ -35,3 +35,29 @@ def test_full_app_rebuilds_on_reruns_without_database():
     assert not app.exception, [str(e.message) for e in app.exception]
     assert any("Quick Market Scan" in header.value for header in app.subheader)
     assert any(t.label == "ZIP code" for t in app.text_input)
+
+
+def test_quick_scan_custom_dates_multicategory_and_subject_plans():
+    app = AppTest.from_file(APP_ENTRY, default_timeout=30)
+    app.secrets["ACCESS_PASSWORD"] = "local-test-only-password"
+    app.session_state["authorized"] = True
+    app.run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert any(c.label == "SFD" for c in app.checkbox)
+    assert any(c.label == "Attached" for c in app.checkbox)
+    attach = next(c for c in app.checkbox if c.label == "Attached")
+    attach.set_value(True).run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert next(c for c in app.checkbox if c.label == "Attached").value
+
+    period = next(r for r in app.radio if r.label == "Closed-sale period")
+    period.set_value("Custom dates").run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert any(d.label == "From (closed sales)" for d in app.date_input)
+    assert any(d.label == "Through (closed sales)" for d in app.date_input)
+
+    count = next(n for n in app.number_input if n.label == "Number of subject plans")
+    count.set_value(2).run()
+    assert not app.exception, [str(e.message) for e in app.exception]
+    assert any(t.label == "Plan 1 name" for t in app.text_input)
+    assert any(t.label == "Plan 2 name" for t in app.text_input)
