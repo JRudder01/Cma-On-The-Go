@@ -54,4 +54,4 @@ if not st.session_state.get("authorized", False):
 # leave subsequent reruns with no rendered interface.
 import runpy
 
-runpy.run_module("mobile_app", run_name="__main__")
+runpy.run_module("mobile_unified", run_name="__main__")
