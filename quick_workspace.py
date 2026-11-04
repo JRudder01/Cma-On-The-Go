@@ -167,8 +167,9 @@ def quick_scan_page():
             end=date.today()
             start=end-timedelta(days=days)
         st.caption(f"Canonical MLS period: {start} to {end}")
+    signature=market_signature(mode,location,products,start,end)
     with st.expander("2 · Subject plans (optional)"):
-        name,subject_plans=subject_inputs()
+        name,subject_plans=subject_inputs(signature)
     with st.expander("3 · Existing competitor communities"):
         competitor_inputs()
     if st.button("Analyze market",type="primary",key="unified_analyze",use_container_width=True):
@@ -190,12 +191,18 @@ def quick_scan_page():
                 with st.spinner("Retrieving MLS transactions…"):
                     result=run_tma(mode,location,products,start,end)
                     plans=current_plans(draft["competitor_ids"]) if draft["competitor_ids"] else []
-                st.session_state["unified_quick_result"]={"name":quick_tma_label(mode,location),"result":result,"products":products}
+                models,warnings=eligible_market_models(result.mls,products) if result.available else ({},{p:"Warehouse unavailable" for p in products})
+                st.session_state["unified_quick_result"]={"name":quick_tma_label(mode,location),"result":result,"products":products,"signature":signature}
+                st.session_state["unified_quick_price_models"]=models
+                st.session_state["unified_quick_price_warnings"]=warnings
                 st.session_state["unified_quick_draft"]=draft
                 st.session_state["unified_quick_plans"]=plans
+                st.rerun()
             except Exception as exc:
                 st.error("Market assembly unavailable ("+type(exc).__name__+").")
-    if st.session_state.get("unified_quick_result"):
+    if st.session_state.get("unified_quick_result") and st.session_state["unified_quick_result"].get("signature")!=signature:
+        st.info("Market settings changed. Run Analyze market again to refresh the trendlines.")
+    elif st.session_state.get("unified_quick_result"):
         render_analysis([st.session_state["unified_quick_result"]],
                         st.session_state.get("unified_quick_draft") or {},
                         st.session_state.get("unified_quick_plans") or [],
