@@ -202,6 +202,40 @@ def search_communities(query: str = "", city: str = "", limit: int = 100) -> lis
     """, {"query": f"%{query.strip().lower()}%", "city": city.strip().lower(), "limit": min(max(1, limit), 100)})
 
 
+
+@st.cache_data(ttl=600, show_spinner=False)
+def community_suggestion_index() -> list[dict]:
+    """Lightweight cached index, loaded only when a user starts searching.
+
+    Reused by community-library and competitor search; 23 active communities
+    at initial development size. No prefetch on initial page render.
+    """
+    return search_communities("", limit=100)
+
+
+def suggest_communities(query: str, limit: int = 5) -> list[dict]:
+    """Rank start-of-name matches ahead of builder/city and substring matches."""
+    token = query.strip().casefold()
+    if len(token) < 2:
+        return []
+    records = community_suggestion_index()
+    def score(row: dict) -> tuple:
+        name = str(row.get("name") or "").casefold()
+        builder = str(row.get("builder") or "").casefold()
+        city = str(row.get("city") or "").casefold()
+        priority = (0 if name.startswith(token) else
+                    1 if token in name else
+                    2 if builder.startswith(token) else
+                    3 if token in builder else
+                    4 if token in city else 5)
+        return (priority, name, builder)
+    matching = [r for r in records
+                if token in " ".join((str(r.get("name") or ""),
+                                     str(r.get("builder") or ""),
+                                     str(r.get("city") or ""))).casefold()]
+    return sorted(matching, key=score)[:max(1, min(limit, 8))]
+
+
 def current_plans(community_ids: list[int]) -> list[dict]:
     ids = list(dict.fromkeys(int(cid) for cid in community_ids))[:30]
     if not ids:
