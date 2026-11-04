@@ -90,3 +90,43 @@ def test_mobile_chart_visual_hierarchy_emphasizes_communities(monkeypatch):
     assert tma.line.width < comp_line.line.width < subject_line.line.width
     assert subject_line.marker.size >= 15
     assert comp_line.marker.size >= 11
+
+
+def test_payment_chart_connects_independent_plan_ladders():
+    subject={"name":"Field Subject","subject_plans":[
+        _plan("Big",2150,900000),_plan("Small",1600,720000)]}
+    comps=[_plan("B",2050,850000,1),_plan("A",1400,650000,1),
+           _plan("C",1750,760000,2)]
+    fig,_,_=make_chart(_empty_market(),subject,comps,"Payment",6.5,20.)
+    assert not any(t.type=="bar" for t in fig.data)
+    traces=[t for t in fig.data if " · plans" in t.name]
+    assert [t.name for t in traces]==[
+        "Field Subject · plans","Community 1 · plans","Community 2 · plans"]
+    assert [list(t.x) for t in traces]==[[1600,2150],[1400,2050],[1750]]
+    assert traces[0].mode=="lines+markers"
+    assert traces[1].mode=="lines+markers"
+    assert traces[2].mode=="markers"
+    assert [round(float(y)) for y in traces[0].y]==[
+        round(float(__import__("mobile_chart").monthly_payment(720000,6.5,20))),
+        round(float(__import__("mobile_chart").monthly_payment(900000,6.5,20)))]
+    assert fig.layout.yaxis.title.text=="Monthly P&I ($)"
+
+
+def test_payment_uses_current_rate_and_down_payment():
+    subject={"name":"Subject","subject_plans":[_plan("Small",1600,700000)]}
+    first,_,_=make_chart(_empty_market(),subject,[],"Payment",6.5,20.)
+    second,_,_=make_chart(_empty_market(),subject,[],"Payment",7.5,20.)
+    a=next(t for t in first.data if t.name=="Subject · plans")
+    b=next(t for t in second.data if t.name=="Subject · plans")
+    assert b.y[0]>a.y[0]
+
+
+def test_plotly_touch_config_always_keeps_pan_and_removes_selection():
+    from mobile_chart import _plotly_config
+    disabled=_plotly_config(False)
+    enabled=_plotly_config(True)
+    for cfg in (disabled,enabled):
+        assert set(["select2d","lasso2d"]).issubset(cfg["modeBarButtonsToRemove"])
+        assert cfg["displayModeBar"] is True
+    assert disabled["scrollZoom"] is False
+    assert enabled["scrollZoom"] is True
