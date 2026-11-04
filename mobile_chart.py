@@ -313,33 +313,25 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
 
 
 
-def _plotly_config(allow_touch_zoom: bool) -> dict:
-    """Use a single pan gesture; remove modes that can trap the user.
+def _plotly_config() -> dict:
+    """Keep pan as the default gesture and use toolbar buttons for zoom.
 
-    Plotly handles touch pinch when scrollZoom is enabled, but that can also
-    intercept a desktop mouse wheel. The caller picks a device-aware default.
+    Removing drag-mode and selection-mode buttons prevents accidental switching
+    into a mode that feels stuck on a touchscreen.
     """
     return {
         "displaylogo":False,
-        "scrollZoom":bool(allow_touch_zoom),
+        "scrollZoom":False,
         "responsive":True,
         "modeBarButtonsToRemove":["zoom2d","pan2d","select2d","lasso2d"],
         "displayModeBar":True,
     }
 
 
-def _mobile_browser() -> bool:
-    try:
-        user_agent=str(st.context.headers.get("User-Agent","")).lower()
-        return any(token in user_agent for token in ("iphone","ipad","ipod","android","mobile"))
-    except (AttributeError,RuntimeError):
-        return False
-
-
 @st.dialog("Expanded market view",width="large")
-def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines, touch_zoom: bool):
-    st.plotly_chart(fig,use_container_width=True,config=_plotly_config(touch_zoom))
-    st.caption("Drag with one finger to pan; use two fingers to pinch-zoom when Touch zoom is enabled. Double-tap to reset.")
+def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines):
+    st.plotly_chart(fig,use_container_width=True,config=_plotly_config())
+    st.caption("Drag to pan · Use + / − to zoom · Home to reset.")
     community_key(draft,plans,lines)
 
 
@@ -358,11 +350,10 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         down=st.slider("Down payment (%)",0,50,20,5)
         st.caption("30-year principal and interest only. Excludes HOA, taxes, insurance and incentives.")
     fig,lines,diagnostics=make_chart(series,draft,plans,metric,rate,down)
-    touch_zoom=st.toggle("Enable touch pinch zoom",value=_mobile_browser(),key="mobile_chart_pinch")
-    st.plotly_chart(fig,use_container_width=True,config=_plotly_config(touch_zoom))
-    st.caption("One finger: pan · Two fingers: pinch zoom with touch zoom enabled · Double-tap: reset. Scroll outside the graph to move down the page.")
+    st.plotly_chart(fig,use_container_width=True,config=_plotly_config())
+    st.caption("Drag to pan · Use the + / − chart buttons to zoom · Home to reset. Scroll outside the chart to move down the page.")
     if st.button("Expand chart",use_container_width=True,key="shared_expand_chart"):
-        expanded_chart(fig,draft,plans,lines,touch_zoom)
+        expanded_chart(fig,draft,plans,lines)
     community_key(draft,plans,lines)
     if diagnostics:
         with st.expander(f"Model and coverage notes ({len(diagnostics)})"):
