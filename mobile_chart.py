@@ -176,7 +176,7 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 fig.add_trace(go.Scatter(x=trend["SF"],y=yy,mode="lines",
                     name=trace_name,showlegend=True,
                     line=dict(color=color,width=1.8,dash=PRODUCT_DASH.get(product,"solid")),
-                    opacity=0.46,
+                    opacity=0.60,
                     hovertemplate=trace_name+": %{x:,.0f} SF · $%{y:,.0f}<extra></extra>"))
                 if not model.get("automatic_pricing_eligible"):
                     diagnostics.append((trace_name,"Descriptive trend only; not certified for pricing"))
