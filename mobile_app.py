@@ -365,42 +365,65 @@ def project_view():
 
 def library_view():
     st.subheader("Community library")
-    st.caption("Search existing, active new-home communities. All plan data is read-only.")
+    st.caption("Search existing new-home communities. Search suggestions appear after two characters.")
     if not warehouse_ready():
-        st.info("Connect the existing warehouse with a restricted read-only database credential.")
+        st.info("Configure the restricted read-only warehouse connection.")
         return
-    search=st.text_input("Community, builder or city",placeholder="Find a community…")
-    if st.button("Search community library", key="search_library"):
+    search=st.text_input("Community, builder or city", placeholder="Try Fusion, Lennar, or Carson", key="community_library_query")
+    if len(search.strip()) >= 2:
+        try:
+            proposals=suggest_communities(search,limit=5)
+            if proposals:
+                st.caption("Suggestions from the saved competitor database:")
+                for proposal in proposals:
+                    label=f"{proposal['name']} · {proposal['builder']} · {proposal.get('city') or ''}"
+                    if st.button(label,key=f"library_suggest_{proposal['id']}",use_container_width=True):
+                        st.session_state["community_search_rows"]=[proposal]
+                        st.session_state["library_selected_ids"]=[int(proposal["id"])]
+                        st.rerun()
+        except Exception as exc:
+            st.caption("Suggestions temporarily unavailable; manual search remains available.")
+    if st.button("Search community library",key="search_library",use_container_width=True):
         try:
             with st.spinner("Retrieving communities…"):
-                st.session_state["community_search_rows"] = search_communities(search, limit=75)
+                st.session_state["community_search_rows"]=search_communities(search,limit=100)
+                st.session_state.pop("community_search_error",None)
         except Exception as exc:
-            st.error(clean_error(exc))
-    matches=st.session_state.get("community_search_rows", [])
+            st.session_state["community_search_error"]=type(exc).__name__
+    if st.session_state.get("community_search_error"):
+        st.error("Community search failed (" + st.session_state["community_search_error"] + ").")
+    matches=st.session_state.get("community_search_rows",[])
     if not matches:
-        st.caption("Use Search community library to load matching communities.")
+        st.caption("Search to see matching active communities.")
         return
-    opts={f"{x['name']} — {x['builder']} · {x.get('city') or ''}":x for x in matches}
-    selected=st.multiselect("Select communities to inspect",list(opts),max_selections=15)
-    if selected:
-        chosen=[opts[key] for key in selected]
-        for record in chosen:
-            with st.expander(f"{record['name']} · {record['builder']}",expanded=len(chosen)==1):
-                st.caption(f"{record.get('city') or ''}, {record.get('state') or ''} · {record.get('product_type') or 'Product unspecified'}")
-                st.write(f"Recorded plans: {record.get('plan_count') or 0}")
-        if st.button("Show selected community plans", key="load_library_plans"):
+    selected_ids=list(st.session_state.get("library_selected_ids",[]))
+    st.caption(f"{len(matches)} matching communities. Tick up to 15 to inspect or use in Quick Scan.")
+    with st.container(height=350,border=True):
+        for record in matches:
+            ident=int(record["id"])
+            label=f"{record['name']} — {record['builder']} · {record.get('city') or ''}"
+            tick=st.checkbox(label,value=ident in selected_ids,key=f"library_choose_{ident}")
+            if tick and ident not in selected_ids and len(selected_ids)<15:
+                selected_ids.append(ident)
+            elif not tick and ident in selected_ids:
+                selected_ids.remove(ident)
+    st.session_state["library_selected_ids"]=selected_ids
+    st.caption(f"Selected: {len(selected_ids)} / 15")
+    if selected_ids:
+        if st.button("Show selected community plans",key="load_library_plans",use_container_width=True):
             try:
                 with st.spinner("Retrieving current plans…"):
-                    st.session_state["community_plan_rows"]=current_plans([p["id"] for p in chosen])
+                    st.session_state["community_plan_rows"]=current_plans(selected_ids)
             except Exception as exc:
                 st.error(clean_error(exc))
-        plans=st.session_state.get("community_plan_rows", [])
+        plans=st.session_state.get("community_plan_rows",[])
         if plans:
-            st.dataframe(pd.DataFrame(plans)[["community_id","name","sqft","base_price","last_verified_date"]],
-                hide_index=True,use_container_width=True)
-        if st.button("Use in Quick Scan",use_container_width=True):
-            st.session_state["project_comm_ids"]=[int(x["id"]) for x in chosen]
-            st.success("Competitor selections saved in this browser session.")
+            display=pd.DataFrame(plans)
+            cols=[c for c in ("community_name","name","sqft","base_price","last_verified_date") if c in display.columns]
+            st.dataframe(display[cols],hide_index=True,use_container_width=True)
+        if st.button("Use selected communities in Quick Scan",use_container_width=True):
+            st.session_state["project_comm_ids"]=selected_ids[:15]
+            st.success("Community IDs saved to this browser session; open Quick Scan to analyze them.")
 
 
 def scan_view():
@@ -482,27 +505,50 @@ def scan_view():
         price=subject_plans[0]["base_price"] if subject_plans else 0
     with st.expander("3 · Existing competitors",expanded=False):
         if warehouse_ready():
-            q=st.text_input("Search communities",placeholder="Builder, community or city…")
-            if st.button("Find competitors", key="find_competitors"):
+            q=st.text_input("Search communities",placeholder="Start typing a community or builder…",key="scan_comp_query")
+            if len(q.strip()) >= 2:
+                try:
+                    proposals=suggest_communities(q,limit=5)
+                    if proposals:
+                        st.caption("Suggested communities:")
+                        for p in proposals:
+                            label=f"{p['name']} — {p['builder']} · {p.get('city') or ''}"
+                            if st.button("Add " + label,key=f"comp_suggest_{p['id']}",use_container_width=True):
+                                selected_ids=list(st.session_state.get("project_comm_ids") or [])
+                                if int(p["id"]) not in selected_ids and len(selected_ids) < 15:
+                                    selected_ids.append(int(p["id"]))
+                                st.session_state["project_comm_ids"]=selected_ids
+                                st.rerun()
+                except Exception:
+                    st.caption("Suggestions unavailable; manual search still works.")
+            if st.button("Find competitors",key="find_competitors",use_container_width=True):
                 try:
                     with st.spinner("Searching current communities…"):
                         st.session_state["competitor_search_rows"]=search_communities(q,limit=100)
                 except Exception as exc:
                     st.error(clean_error(exc))
-            found=list(st.session_state.get("competitor_search_rows", []))
-            try:
-                if mode=="Coordinates + radius" and location and found:
-                    for p in found:
-                        if p.get("latitude") is not None and p.get("longitude") is not None:
-                            p["distance"]=haversine(location["latitude"],location["longitude"],float(p["latitude"]),float(p["longitude"]))
-                    found.sort(key=lambda x:x.get("distance",1e9))
-                options={f"{p['name']} — {p['builder']} · {p.get('city') or ''}"+(f" · {p['distance']:.1f} mi" if "distance" in p else ""):int(p["id"]) for p in found}
-                previous=set(int(x) for x in st.session_state.get("project_comm_ids",[]))
-                defaults=[label for label,cid in options.items() if cid in previous]
-                selected=st.multiselect("Choose existing communities",list(options),default=defaults,max_selections=15)
-                st.session_state["project_comm_ids"]=[options[x] for x in selected]
-            except Exception as exc: st.error(clean_error(exc))
-        else: st.caption("Connect the read-only warehouse to search competitors.")
+            found=list(st.session_state.get("competitor_search_rows",[]))
+            if mode=="Coordinates + radius" and location and found:
+                for p in found:
+                    if p.get("latitude") is not None and p.get("longitude") is not None:
+                        p["distance"]=haversine(location["latitude"],location["longitude"],float(p["latitude"]),float(p["longitude"]))
+                found.sort(key=lambda x:x.get("distance",1e9))
+            selected_ids=list(st.session_state.get("project_comm_ids") or [])
+            with st.container(height=260,border=True):
+                for p in found:
+                    ident=int(p["id"])
+                    label=f"{p['name']} — {p['builder']} · {p.get('city') or ''}"
+                    if "distance" in p:
+                        label+=f" · {p['distance']:.1f} mi"
+                    checked=st.checkbox(label,value=ident in selected_ids,key=f"scan_comp_{ident}")
+                    if checked and ident not in selected_ids and len(selected_ids)<15:
+                        selected_ids.append(ident)
+                    elif not checked and ident in selected_ids:
+                        selected_ids.remove(ident)
+            st.session_state["project_comm_ids"]=selected_ids[:15]
+            st.caption(f"{len(st.session_state['project_comm_ids'])} existing communities selected · 15 maximum")
+        else:
+            st.caption("Configure the read-only warehouse to search competitors.")
     if st.button("Analyze market",type="primary",use_container_width=True):
         st.session_state["draft_subject"]={"name":name,"sf":sf,"price":price}
         st.session_state["draft_subject_plans"]=subject_plans
