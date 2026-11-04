@@ -118,6 +118,10 @@ def test_price_player_reuses_plan_fields_and_applies_without_warehouse():
     asking=next(w for w in app.number_input if w.label=="Asking price ($)")
     assert asking.value==710000
     assert app.session_state["unified_quick_draft"]["subject_plans"][0]["base_price"]==710000
+    assert app.session_state["unified_quick_draft"]["applied_pricing_reference"]=={
+        "tma_name":"TMA Carson","product":"SFD","percent":0,
+        "market_signature":signature
+    }
 
 
 def test_price_player_applies_eligible_plans_when_one_is_out_of_range():
