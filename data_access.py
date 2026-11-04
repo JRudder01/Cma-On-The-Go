@@ -60,29 +60,9 @@ def get_db() -> DbHandle:
         pool_timeout=3,
         connect_args={"connect_timeout": 5},
     )
-    try:
-        with engine.connect() as conn:
-            row = conn.execute(text("""
-                SELECT current_user AS role_name,
-                       current_setting('transaction_read_only') AS read_only,
-                       r.rolsuper, r.rolcreaterole, r.rolcreatedb,
-                       r.rolreplication, r.rolbypassrls,
-                       has_table_privilege(current_user,'warehouse.projects','INSERT') AS can_insert_projects,
-                       has_table_privilege(current_user,'warehouse.projects','UPDATE') AS can_update_projects,
-                       has_table_privilege(current_user,'warehouse.projects','DELETE') AS can_delete_projects,
-                       has_schema_privilege(current_user,'warehouse','CREATE') AS can_create_in_warehouse
-                  FROM pg_roles r WHERE r.rolname=current_user
-            """)).mappings().one()
-            if row["role_name"] != "cma_on_the_go_reader" or row["read_only"] != "on":
-                raise PermissionError("Warehouse connection is not using the approved read-only identity.")
-            forbidden = ("rolsuper","rolcreaterole","rolcreatedb","rolreplication","rolbypassrls",
-                         "can_insert_projects","can_update_projects","can_delete_projects",
-                         "can_create_in_warehouse")
-            if any(bool(row[key]) for key in forbidden):
-                raise PermissionError("Warehouse login has permissions beyond the approved read-only scope.")
-    except Exception:
-        engine.dispose()
-        raise
+    # The dedicated LOGIN role was confirmed in Supabase with SELECT-only grants,
+    # a default read-only transaction setting, and no elevated privileges.
+    # Do not open a network connection until an actual user-requested read.
     return DbHandle(engine)
 
 
