@@ -131,3 +131,41 @@ def test_plotly_toolbar_zoom_keeps_pan_and_removes_selection_modes():
     assert "resetScale2d" not in removed
     assert cfg["scrollZoom"] is False
     assert cfg["displayModeBar"] is True
+
+
+def test_selected_price_player_trend_extends_dashed_beyond_support(monkeypatch):
+    import mobile_chart
+    data=pd.DataFrame({
+        "Standard Status":["Closed"]*3,
+        "TMA Type":["Attached"]*3,
+        "Living Area":[1000,1500,2000],
+        "Close Price":[500000,700000,900000],
+        "Price per Sq Ft":[500.,466.67,450.],
+        "List Price":[510000,710000,910000],
+    })
+    market={"name":"TMA Escondido","result":SimpleNamespace(available=True,mls=data),
+            "products":["Attached"]}
+    model={"sf_min":1000.,"sf_max":2000.,
+           "intercept":100000.,"slope":400.,
+           "automatic_pricing_eligible":True}
+    monkeypatch.setattr(mobile_chart,"analyze_tma_outliers",
+                        lambda frame:(frame.assign(Keep=True),{}))
+    monkeypatch.setattr(mobile_chart,"fit_resale_trend",lambda frame:model)
+    monkeypatch.setattr(mobile_chart,"trend_points",
+                        lambda model,lo,hi:pd.DataFrame({"SF":[1000.,2000.],
+                                                        "Price":[500000.,900000.]}))
+    draft={"name":"Subject",
+           "subject_plans":[_plan("Small",1500,0),_plan("Large",2500,0)],
+           "pricing_reference_product":"Attached"}
+    fig,_,notes=make_chart([market],draft,[],"Price",6.5,20.)
+    extension=next(trace for trace in fig.data if
+                   trace.name=="TMA Escondido · Attached · extrapolated")
+    assert extension.line.dash=="dash"
+    assert list(extension.x)==[2000.,2500.]
+    assert list(extension.y)==[900000.,1100000.]
+    assert any("extrapolated" in note.lower() for _,note in notes)
+
+    draft["pricing_reference_product"]="SFD"
+    fig,_,_=make_chart([market],draft,[],"Price",6.5,20.)
+    assert not any("extrapolated" in trace.name for trace in fig.data)
+
