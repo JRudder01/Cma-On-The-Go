@@ -55,12 +55,10 @@ def get_db() -> DbHandle:
     engine = create_engine(
         url,
         pool_pre_ping=True,
-        pool_size=2,
+        pool_size=1,
         max_overflow=0,
-        connect_args={
-            "options": "-c default_transaction_read_only=on -c statement_timeout=12000",
-            "connect_timeout": 10,
-        },
+        pool_timeout=3,
+        connect_args={"connect_timeout": 5},
     )
     try:
         with engine.connect() as conn:
@@ -89,7 +87,31 @@ def get_db() -> DbHandle:
 
 
 def connection_check() -> dict:
-    """Verify the mobile reader can see each required relation (no user data returned)."""
+    """Bounded, independent connection preflight without SQLAlchemy caching.
+
+    Uses the dedicated SELECT-only login. Does not mutate database state.
+    Does not expose the connection URI, password, host or server errors in UI.
+    """
+    import logging
+    import psycopg
+    from psycopg.rows import dict_row
+
+    raw_url = st.secrets.get("READONLY_DATABASE_URL", "")
+    url = make_url(raw_url)
+    allowed_users = {
+        "cma_on_the_go_reader",
+        "cma_on_the_go_reader.fbdnizwixnkcybjbwosf",
+    }
+    if url.username not in allowed_users:
+        raise ValueError("Unexpected database role in configuration.")
+    if url.host not in ("aws-0-us-west-1.pooler.supabase.com",
+                        "db.fbdnizwixnkcybjbwosf.supabase.co"):
+        raise ValueError("Unexpected warehouse connection host.")
+    if url.query.get("sslmode") not in ("require", "verify-ca", "verify-full"):
+        raise ValueError("TLS is required.")
+    if url.database != "postgres" or url.port not in (None, 5432):
+        raise ValueError("Expected the approved Postgres session endpoint.")
+
     required = (
         "public.builders", "public.communities", "public.plans",
         "public.plan_versions", "warehouse.projects",
@@ -99,17 +121,51 @@ def connection_check() -> dict:
         "warehouse.canonical_transaction_observations",
         "warehouse.inventory_current_state",
     )
-    with get_db().engine.connect() as conn:
-        missing = [
-            name for name in required
-            if not conn.execute(
-                text("select has_table_privilege(current_user, :relation, 'SELECT')"),
-                {"relation": name},
-            ).scalar_one()
-        ]
-        if missing:
-            raise PermissionError("Read-only role is missing SELECT privileges on " + ", ".join(missing))
-        return {"reader_verified": True, "required_objects_checked": len(required)}
+    logging.info("CMA mobile diagnostic: preflight config accepted")
+    # Supavisor can reject some libpq startup options; rely on the already
+    # configured PostgreSQL role default read-only setting, and VERIFY it.
+    with psycopg.connect(
+        host=url.host,
+        port=url.port or 5432,
+        dbname="postgres",
+        user=url.username,
+        password=url.password,
+        sslmode=url.query["sslmode"],
+        connect_timeout=5,
+        row_factory=dict_row,
+    ) as connection:
+        logging.info("CMA mobile diagnostic: TLS and authentication succeeded")
+        with connection.cursor() as cursor:
+            cursor.execute("""
+              SELECT current_user AS role_name,
+                     current_setting('transaction_read_only') AS read_only,
+                     r.rolsuper, r.rolcreaterole, r.rolcreatedb,
+                     r.rolreplication, r.rolbypassrls,
+                     has_table_privilege(current_user,'warehouse.projects','INSERT') AS can_insert_projects,
+                     has_table_privilege(current_user,'warehouse.projects','UPDATE') AS can_update_projects,
+                     has_table_privilege(current_user,'warehouse.projects','DELETE') AS can_delete_projects,
+                     has_schema_privilege(current_user,'warehouse','CREATE') AS can_create_in_warehouse
+                FROM pg_roles r WHERE r.rolname = current_user
+            """)
+            row = cursor.fetchone()
+            if row is None or row["role_name"] != "cma_on_the_go_reader" or row["read_only"] != "on":
+                raise PermissionError("Reader identity or read-only transaction setting failed.")
+            forbidden = ("rolsuper", "rolcreaterole", "rolcreatedb",
+                         "rolreplication", "rolbypassrls",
+                         "can_insert_projects", "can_update_projects",
+                         "can_delete_projects", "can_create_in_warehouse")
+            if any(bool(row[key]) for key in forbidden):
+                raise PermissionError("Reader role has prohibited privileges.")
+            logging.info("CMA mobile diagnostic: role and read-only checks passed")
+            cursor.execute("""
+                SELECT rel, has_table_privilege(current_user, rel, 'SELECT') AS allowed
+                FROM unnest(%s::text[]) AS rel
+            """, (list(required),))
+            missing = [item["rel"] for item in cursor.fetchall() if not item["allowed"]]
+            if missing:
+                raise PermissionError("Reader missing SELECT grants for: " + ", ".join(missing))
+    logging.info("CMA mobile diagnostic: all required grants verified")
+    return {"reader_verified": True, "required_objects_checked": len(required)}
 
 
 def _rows(sql: str, params: dict | None = None) -> list[dict]:
