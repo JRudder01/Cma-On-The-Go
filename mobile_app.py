@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from math import asin, cos, radians, sin, sqrt
 import hmac
 import json
+from html import escape as html_escape
 
 import numpy as np
 import pandas as pd
@@ -246,7 +247,7 @@ def market_lens(result, draft, plans):
                 group=[p for p in plans if p.get("community_id")==community_id]
                 if group:
                     group_name=str(group[0].get("community_name") or "Community")
-                    st.markdown(f'<span style="color:{group_palette[j % len(group_palette)]}">■</span> **C{j+1} · {group_name}**',unsafe_allow_html=True)
+                    st.markdown(f'<span style="color:{group_palette[j % len(group_palette)]}">■</span> **C{j+1} · {html_escape(group_name)}**',unsafe_allow_html=True)
             for p in products:
                 m=models.get(p)
                 if m:
