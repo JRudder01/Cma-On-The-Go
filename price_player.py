@@ -41,7 +41,7 @@ def eligible_market_models(frame: pd.DataFrame, products: list[str]) -> tuple[di
 
 
 def price_proposals(plans: list[dict], model: dict, percent: float) -> list[dict]:
-    """Return safe per-plan recommendations; never interpolate beyond support."""
+    """Return supported and clearly identified extrapolated predictions from one fitted equation."""
     if not model or not model.get("automatic_pricing_eligible",False):
         raise ValueError("The selected trend is not eligible for automatic pricing")
     offset=float(percent)
@@ -54,9 +54,17 @@ def price_proposals(plans: list[dict], model: dict, percent: float) -> list[dict
              "sqft":sqft,"existing_price":float(plan.get("base_price") or 0)}
         if not isfinite(sqft) or sqft<=0:
             row["reason"]="No valid square footage"
-        elif not is_within_trend_support(model,sqft):
-            row["reason"]="Outside retained-sale SF range"
         else:
+            lo=float(model["sf_min"]); hi=float(model["sf_max"])
+            extrapolated=not is_within_trend_support(model,sqft)
+            row["extrapolated"]=extrapolated
+            if extrapolated:
+                boundary=lo if sqft<lo else hi
+                row["support_boundary_sf"]=boundary
+                row["distance_sf"]=abs(sqft-boundary)
+                row["distance_pct"]=round(abs(sqft-boundary)/boundary*100,1)
+                row["support_min_sf"]=lo
+                row["support_max_sf"]=hi
             baseline=float(model["intercept"])+float(model["slope"])*sqft
             if not isfinite(baseline) or baseline<=0:
                 row["reason"]="Invalid trend prediction"
