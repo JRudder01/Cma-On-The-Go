@@ -61,25 +61,56 @@ def _positive_point(plan: dict, metric: str):
 
 
 def _annotate_sparse(fig: go.Figure, points: list[tuple[float,float,str,bool]]) -> None:
-    """A few direct labels, not a pile-up; all names also appear in the key."""
+    """Place readable labels near markers with collision-checked positions.
+
+    Full names remain in the always-visible key; the chart uses compact labels
+    and leader lines so overlapping communities do not obscure trendlines.
+    """
     if not points:
         return
     xs=[p[0] for p in points]
     ys=[p[1] for p in points]
-    xspan=max(500.,max(xs)-min(xs))
-    yspan=max(150.,max(ys)-min(ys))
-    used=[]
-    for x,y,name,is_subject in points:
-        if len(used)>=4:
+    xmin,xmax=min(xs),max(xs)
+    ymin,ymax=min(ys),max(ys)
+    xspan=max(1000.0,xmax-xmin)
+    yspan=max(350.0,ymax-ymin)
+    occupied=[]
+    # Competitor communities first, then subject plans. All keep a marker.
+    ordered=sorted(enumerate(points),key=lambda t:(t[1][3],t[0]))
+    offsets=[(0,-32),(0,35),(-65,-29),(65,-29),(-75,29),(75,29),
+             (-110,0),(110,0)]
+    for idx,(x,y,name,is_subject) in ordered:
+        short=str(name).strip()
+        if len(short)>21:
+            short=short[:20]+"…"
+        if is_subject:
+            short="S"+str(1+sum(1 for p in points[:idx] if p[3]))+" · "+short
+        placed=None
+        for dx,dy in offsets:
+            px=(x-xmin)/xspan+dx/650.0
+            py=(y-ymin)/yspan+dy/390.0
+            width=max(.10,min(.33,len(short)*.012))
+            if px-width/2 < -.04 or px+width/2 > 1.04:
+                continue
+            if py < -.04 or py > 1.06:
+                continue
+            if any(abs(px-ox)<(width+ow)/2+.018 and abs(py-oy)<.075
+                   for ox,oy,ow in occupied):
+                continue
+            placed=(dx,dy,px,py,width)
             break
-        if any(abs(x-a)/xspan<.18 and abs(y-b)/yspan<.17 for a,b in used):
+        if placed is None:
             continue
-        used.append((x,y))
-        label=name[:15]+("…" if len(name)>15 else "")
-        fig.add_annotation(x=x,y=y,text=label,showarrow=False,
-                           yshift=18,xanchor="center",yanchor="bottom",
-                           font=dict(size=10,color="#b91c1c" if is_subject else "#334155"),
-                           bgcolor="rgba(255,255,255,0.92)",borderpad=2)
+        dx,dy,px,py,width=placed
+        occupied.append((px,py,width))
+        fig.add_annotation(
+            x=x,y=y,text=short,showarrow=True,
+            ax=dx,ay=-dy,arrowhead=0,arrowwidth=1,
+            arrowcolor="#b91c1c" if is_subject else "#64748b",
+            font=dict(size=10,color="#9f1239" if is_subject else "#1e293b"),
+            bgcolor="rgba(255,255,255,0.93)",
+            bordercolor="rgba(148,163,184,0.35)",borderpad=3
+        )
 
 
 def make_chart(series: list[dict], draft: dict, plans: list[dict],
