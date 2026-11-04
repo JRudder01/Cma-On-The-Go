@@ -467,7 +467,8 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
     # avoids overlap with the mobile modebar while retaining the figure's
     # interactive/responsive legend (including when expanded).
     show_market_legend=metric in ("Price/SF","Price")
-    n_market_lines=len(trend_labels) if show_market_legend else 0
+    n_market_lines=(len(trend_labels) if show_market_legend else
+                    len(fig.data) if metric=="Inventory" else 0)
     legend_bottom=90+max(0,n_market_lines-3)*10 if n_market_lines else 40
     fig.update_layout(
         template="plotly_white",
