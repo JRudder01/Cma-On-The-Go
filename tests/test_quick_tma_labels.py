@@ -12,9 +12,9 @@ def test_quick_tma_zip():
 
 def test_quick_tma_radius_singular_plural_and_decimal():
     for radius, expected in [
-        (1,"TMA 1 mile radius"),
-        (2,"TMA 2 miles radius"),
-        (2.5,"TMA 2.5 miles radius"),
+        (1,"TMA 1-mile radius"),
+        (2,"TMA 2-mile radius"),
+        (2.5,"TMA 2.5-mile radius"),
     ]:
         assert quick_tma_label("Coordinates + radius",{"radius":radius})==expected
 
