@@ -168,3 +168,53 @@ def test_saved_project_rejects_unsupported_market_configuration():
     with pytest.raises(ValueError,match="Saved ZIP"):
         saved_market_definition({"geography_mode":"ZIP code","zip_code":"Bad"},
                                 {},{})
+
+
+def test_saved_multi_zip_tma_reconstructs_all_zips_without_database_writes(monkeypatch):
+    from saved_workspace import saved_market_definition,_run_saved_market
+    area={"geography_mode":"ZIP code","zip_code":"90806,90807",
+          "meta":{"zips":["90806","90807"]},
+          "property_types":["Condo"],
+          "tma_start":"2025-11-04","tma_end":"2026-11-04"}
+    mode,loc,products,start,end=saved_market_definition(area,{}, {})
+    assert mode=="ZIP code"
+    assert loc=={"zipCodes":["90806","90807"]}
+    assert products==["Attached"]
+
+    calls=[]
+    def mock_run(mode,loc,products,start,end):
+        calls.append((mode,loc["zipCode"],list(products)))
+        code=loc["zipCode"]
+        frame=pd.DataFrame({
+            "Canonical Transaction ID":["tx-"+code],
+            "Canonical Property ID":["property-"+code],
+            "Canonical Listing ID":["listing-"+code],
+            "Standard Status":["Closed"],
+            "TMA Type":["Attached"],
+            "Living Area":[1300],
+            "Close Price":[700000],
+            "Price per Sq Ft":[538.46],
+            "List Price":[710000],
+        })
+        return SimpleNamespace(available=True,mls=frame)
+    monkeypatch.setattr(saved_workspace,"run_tma",mock_run)
+    result=_run_saved_market(mode,loc,products,start,end)
+    assert result.available
+    assert len(result.mls)==2
+    assert result.stats["assembled_zip_count"]==2
+    assert calls==[
+        ("ZIP code","90806",["Attached"]),
+        ("ZIP code","90807",["Attached"]),
+    ]
+
+
+def test_saved_zip_delimiters_reject_invalid_and_accept_valid_lists():
+    from saved_workspace import saved_market_definition
+    import pytest
+    base={"geography_mode":"ZIP code","property_types":["Single Family"],
+          "tma_start":"2025-11-04","tma_end":"2026-11-04"}
+    mode,loc,_,_,_=saved_market_definition(
+        {**base,"zip_code":"90806; 90807"}, {},{})
+    assert loc=={"zipCodes":["90806","90807"]}
+    with pytest.raises(ValueError,match="ZIP"):
+        saved_market_definition({**base,"zip_code":"90806, ABC"}, {},{})
