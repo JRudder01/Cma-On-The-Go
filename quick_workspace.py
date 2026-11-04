@@ -57,6 +57,20 @@ def competitor_inputs():
     st.caption(f"{len(current)} existing competitor communities selected")
 
 
+def quick_tma_label(mode: str, location: dict) -> str:
+    """Describe the actual geographic filter without claiming a city for a radius."""
+    if mode == "City + state":
+        return f"TMA {str(location.get('city') or '').strip()}"
+    if mode == "ZIP code":
+        return f"TMA {str(location.get('zipCode') or '').strip()}"
+    if mode == "Coordinates + radius":
+        radius = float(location["radius"])
+        formatted = f"{radius:g}"
+        unit = "mile" if radius == 1 else "miles"
+        return f"TMA {formatted} {unit} radius"
+    raise ValueError("Unsupported quick-scan geography")
+
+
 def quick_scan_page():
     st.subheader("Quick Market Scan")
     st.caption("One TMA, any combination of resale categories, optional subject plans.")
@@ -118,7 +132,7 @@ def quick_scan_page():
                 with st.spinner("Retrieving MLS transactions…"):
                     result=run_tma(mode,location,products,start,end)
                     plans=current_plans(draft["competitor_ids"]) if draft["competitor_ids"] else []
-                st.session_state["unified_quick_result"]={"name":"Quick Scan","result":result,"products":products}
+                st.session_state["unified_quick_result"]={"name":quick_tma_label(mode,location),"result":result,"products":products}
                 st.session_state["unified_quick_draft"]=draft
                 st.session_state["unified_quick_plans"]=plans
             except Exception as exc:
