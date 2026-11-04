@@ -15,7 +15,5 @@ if source=="Quick Scan":
     quick_scan_page()
 else:
     saved_projects_page()
-with st.expander("Browse existing communities"):
-    community_library_panel()
 st.divider()
 st.caption("Read-only mobile analysis · No warehouse changes · Desktop results reproduced only when historical chart data is available")
