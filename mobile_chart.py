@@ -175,7 +175,8 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 trend_labels.append((trace_name,color))
                 fig.add_trace(go.Scatter(x=trend["SF"],y=yy,mode="lines",
                     name=trace_name,showlegend=True,
-                    line=dict(color=color,width=3.5,dash=PRODUCT_DASH.get(product,"solid")),
+                    line=dict(color=color,width=1.8,dash=PRODUCT_DASH.get(product,"solid")),
+                    opacity=0.46,
                     hovertemplate=trace_name+": %{x:,.0f} SF · $%{y:,.0f}<extra></extra>"))
                 if not model.get("automatic_pricing_eligible"):
                     diagnostics.append((trace_name,"Descriptive trend only; not certified for pricing"))
@@ -188,8 +189,8 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 x=[p[0] for p in subject_points],
                 y=[p[1] for p in subject_points],
                 mode="lines+markers" if len(subject_points)>=2 else "markers",
-                line=dict(color="#dc2626",width=2.5),
-                marker=dict(symbol="star",size=15,color="#dc2626",
+                line=dict(color="#dc2626",width=3.6),
+                marker=dict(symbol="star",size=16,color="#dc2626",
                             line=dict(color="white",width=1)),
                 name=subject_name+" · plans",showlegend=False,
                 text=[str(p[2].get("name") or f"Plan {j+1}")
@@ -210,9 +211,9 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 x=[p[0] for p in pts],
                 y=[p[1] for p in pts],
                 mode="lines+markers" if len(pts)>=2 else "markers",
-                line=dict(color=color,width=1.8),
-                opacity=.78,
-                marker=dict(symbol="square",size=11,color=color,
+                line=dict(color=color,width=3.0),
+                opacity=.96,
+                marker=dict(symbol="square",size=12,color=color,
                             line=dict(color="white",width=1)),
                 name=community_name+" · plans",showlegend=False,
                 text=[str(p[2].get("name") or f"Plan {j+1}")
