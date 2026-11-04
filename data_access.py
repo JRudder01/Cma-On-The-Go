@@ -243,7 +243,7 @@ def current_plans(community_ids: list[int]) -> list[dict]:
     # Only dynamically bind values, never construct untrusted SQL tokens.
     from sqlalchemy import bindparam
     statement = text("""
-        SELECT p.community_id, p.id AS plan_id, p.name, pv.sqft, pv.base_price,
+        SELECT p.community_id, c.name AS community_name, p.id AS plan_id, p.name, pv.sqft, pv.base_price,
                pv.product_type, pv.last_verified_date, pv.effective_date
         FROM plans p
         JOIN communities c ON c.id = p.community_id AND c.active = true
