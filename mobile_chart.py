@@ -226,14 +226,14 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
     fig.update_layout(template="plotly_white",height=460 if metric in ("Price/SF","Price") else 390,
                       margin=dict(l=6,r=6,t=24,b=25),font=dict(size=11),
                       legend=dict(orientation="h",y=1.05,x=0,font=dict(size=10)),
-                      hovermode="closest",dragmode="zoom")
+                      hovermode="closest",dragmode="pan")
     return fig,trend_labels,diagnostics
 
 
 @st.dialog("Expanded market view",width="large")
 def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines):
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True})
-    st.caption("Drag or pinch to zoom. Double-tap to reset.")
+    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True,"modeBarButtonsToRemove":["zoom2d","pan2d"]})
+    st.caption("One finger: pan the chart · Two fingers: pinch to zoom · Double-tap: reset.")
     community_key(draft,plans,lines)
 
 
@@ -252,8 +252,8 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         down=st.slider("Down payment (%)",0,50,20,5)
         st.caption("30-year principal and interest only. Excludes HOA, taxes, insurance and incentives.")
     fig,lines,diagnostics=make_chart(series,draft,plans,metric,rate,down)
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True})
-    st.caption("Scroll the page normally; use the chart toolbar or drag to zoom. Double-click to reset.")
+    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True,"modeBarButtonsToRemove":["zoom2d","pan2d"]})
+    st.caption("Drag to pan; pinch with two fingers to zoom. Double-tap or double-click to reset. Scroll outside the plot to move down the page.")
     if st.button("Expand chart",use_container_width=True,key="shared_expand_chart"):
         expanded_chart(fig,draft,plans,lines)
     community_key(draft,plans,lines)
