@@ -154,4 +154,7 @@ def saved_projects_page():
             for label,note in notes:
                 st.write(f"{label}: {note}")
     st.info("Combined chart uses current canonical MLS records. It is not an exact historical desktop snapshot: custom MLS files, manual exclusions and pricing adjustments are not stored in the same chart data.")
-    render_analysis(series,{"subject_plans":saved_subject_plans(state)},st.session_state.get("saved_project_competitor_plans") or [],scope="Saved Project")
+    render_analysis(series,{"name":str(project.get("subject_name") or "").strip() or "Subject",
+                            "subject_plans":saved_subject_plans(state)},
+                    st.session_state.get("saved_project_competitor_plans") or [],
+                    scope="Saved Project")
