@@ -79,6 +79,12 @@ def subject_inputs(signature: str):
         if sf>0:
             plans.append({"name":label,"sqft":sf,"base_price":price,"input_index":i})
     subject_price_player(plans,signature)
+    previous=st.session_state.get("unified_quick_result") or {}
+    if previous.get("signature")==signature and st.session_state.get("unified_quick_draft"):
+        st.session_state["unified_quick_draft"]["name"]=name
+        st.session_state["unified_quick_draft"]["subject_plans"]=plans
+    if st.session_state.pop("unified_player_applied",False):
+        st.success("Suggested prices applied to your existing subject plan fields and chart.")
     return name,plans
 
 
