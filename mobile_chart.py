@@ -227,25 +227,64 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
         fig.update_xaxes(title="Home size (SF)",gridcolor="#edf2f7")
         fig.update_yaxes(title="Price ($)" if metric=="Price" else "$ per SF",tickprefix="$",gridcolor="#edf2f7")
     elif metric=="Payment":
-        labels=[];vals=[];colors=[]
-        for i,p in enumerate((draft.get("subject_plans") or [])[:8]):
+        # Mobile payment view mirrors the community-ladder geometry used for
+        # price charts. It is P&I only, not desktop all-in payment.
+        subject_name=str(draft.get("name") or "").strip() or "Subject"
+        subject_rows=(draft.get("subject_plans") or [])[:8]
+        subject_pts=[]
+        for p in subject_rows:
             try:
-                val=float(p.get("base_price") or 0)
-                if val>0:
-                    labels.append(f"S{i+1} {p.get('name') or 'Subject'}");vals.append(monthly_payment(val,rate,down));colors.append("#dc2626")
-            except (TypeError,ValueError):
+                sf=float(p.get("sqft") or 0)
+                base=float(p.get("base_price") or 0)
+                if sf>0 and base>0 and isfinite(sf) and isfinite(base):
+                    subject_pts.append((sf,monthly_payment(base,rate,down),p))
+            except (TypeError,ValueError,ZeroDivisionError,OverflowError):
                 continue
+        subject_pts.sort(key=lambda x:x[0])
+        if subject_pts:
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in subject_pts],y=[p[1] for p in subject_pts],
+                mode="lines+markers" if len(subject_pts)>1 else "markers",
+                line=dict(color="#dc2626",width=3.6),
+                marker=dict(symbol="star",size=16,color="#dc2626",
+                            line=dict(color="white",width=1)),
+                showlegend=False,name=subject_name+" · plans",
+                text=[str(p[2].get("name") or "Plan") for p in subject_pts],
+                hovertemplate=subject_name+" · %{text}<br>%{x:,.0f} SF · $%{y:,.0f}/mo P&I<extra></extra>"
+            ))
+            mid=subject_pts[len(subject_pts)//2]
+            point_labels.append((mid[0],mid[1],subject_name,True))
+
         for i,(_,group) in enumerate(community_groups(plans)):
-            for p in group[:4]:
+            pts=[]
+            for p in group:
                 try:
-                    val=float(p.get("base_price") or 0)
-                    if val>0:
-                        labels.append(f"C{i+1} {p.get('name') or 'Plan'}");vals.append(monthly_payment(val,rate,down));colors.append(COMP_COLORS[i % len(COMP_COLORS)])
-                except (TypeError,ValueError):
+                    sf=float(p.get("sqft") or 0)
+                    base=float(p.get("base_price") or 0)
+                    if sf>0 and base>0 and isfinite(sf) and isfinite(base):
+                        pts.append((sf,monthly_payment(base,rate,down),p))
+                except (TypeError,ValueError,ZeroDivisionError,OverflowError):
                     continue
-        fig.add_trace(go.Bar(x=labels,y=vals,marker_color=colors,text=[f"${v:,.0f}" for v in vals],textposition="outside"))
-        fig.update_yaxes(title="Monthly P&I ($)",tickprefix="$",rangemode="tozero")
-        fig.update_xaxes(tickangle=-30)
+            pts.sort(key=lambda x:x[0])
+            if not pts:
+                continue
+            label=str(group[0].get("community_name") or f"Comp {i+1}")
+            color=COMP_COLORS[i % len(COMP_COLORS)]
+            fig.add_trace(go.Scatter(
+                x=[p[0] for p in pts],y=[p[1] for p in pts],
+                mode="lines+markers" if len(pts)>1 else "markers",
+                line=dict(color=color,width=3.0),opacity=.96,
+                marker=dict(symbol="square",size=12,color=color,
+                            line=dict(color="white",width=1)),
+                showlegend=False,name=label+" · plans",
+                text=[str(p[2].get("name") or "Plan") for p in pts],
+                hovertemplate=label+" · %{text}<br>%{x:,.0f} SF · $%{y:,.0f}/mo P&I<extra></extra>"
+            ))
+            mid=pts[len(pts)//2]
+            point_labels.append((mid[0],mid[1],label,False))
+        _annotate_sparse(fig,point_labels)
+        fig.update_xaxes(title="Home size (SF)",gridcolor="#edf2f7")
+        fig.update_yaxes(title="Monthly P&I ($)",tickprefix="$",gridcolor="#edf2f7")
     else:
         for i,entry in enumerate(series):
             frame=entry["result"].mls
@@ -257,17 +296,41 @@ def make_chart(series: list[dict], draft: dict, plans: list[dict],
                 marker_color=TMA_COLORS[i % len(TMA_COLORS)]))
         fig.update_layout(barmode="group")
         fig.update_yaxes(title="MLS records")
-    fig.update_layout(template="plotly_white",height=460 if metric in ("Price/SF","Price") else 390,
+    fig.update_layout(template="plotly_white",height=460 if metric in ("Price/SF","Price","Payment") else 390,
                       margin=dict(l=6,r=6,t=24,b=25),font=dict(size=11),
                       legend=dict(orientation="h",y=1.05,x=0,font=dict(size=10)),
                       hovermode="closest",dragmode="pan")
     return fig,trend_labels,diagnostics
 
 
+
+def _plotly_config(allow_touch_zoom: bool) -> dict:
+    """Use a single pan gesture; remove modes that can trap the user.
+
+    Plotly handles touch pinch when scrollZoom is enabled, but that can also
+    intercept a desktop mouse wheel. The caller picks a device-aware default.
+    """
+    return {
+        "displaylogo":False,
+        "scrollZoom":bool(allow_touch_zoom),
+        "responsive":True,
+        "modeBarButtonsToRemove":["zoom2d","pan2d","select2d","lasso2d"],
+        "displayModeBar":True,
+    }
+
+
+def _mobile_browser() -> bool:
+    try:
+        user_agent=str(st.context.headers.get("User-Agent","")).lower()
+        return any(token in user_agent for token in ("iphone","ipad","ipod","android","mobile"))
+    except (AttributeError,RuntimeError):
+        return False
+
+
 @st.dialog("Expanded market view",width="large")
-def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines):
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True,"modeBarButtonsToRemove":["zoom2d","pan2d"]})
-    st.caption("One finger: pan the chart · Two fingers: pinch to zoom · Double-tap: reset.")
+def expanded_chart(fig: go.Figure,draft: dict,plans: list[dict],lines, touch_zoom: bool):
+    st.plotly_chart(fig,use_container_width=True,config=_plotly_config(touch_zoom))
+    st.caption("Drag with one finger to pan; use two fingers to pinch-zoom when Touch zoom is enabled. Double-tap to reset.")
     community_key(draft,plans,lines)
 
 
@@ -286,10 +349,11 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         down=st.slider("Down payment (%)",0,50,20,5)
         st.caption("30-year principal and interest only. Excludes HOA, taxes, insurance and incentives.")
     fig,lines,diagnostics=make_chart(series,draft,plans,metric,rate,down)
-    st.plotly_chart(fig,use_container_width=True,config={"displaylogo":False,"scrollZoom":False,"responsive":True,"modeBarButtonsToRemove":["zoom2d","pan2d"]})
-    st.caption("Drag to pan; pinch with two fingers to zoom. Double-tap or double-click to reset. Scroll outside the plot to move down the page.")
+    touch_zoom=st.toggle("Enable touch pinch zoom",value=_mobile_browser(),key="mobile_chart_pinch")
+    st.plotly_chart(fig,use_container_width=True,config=_plotly_config(touch_zoom))
+    st.caption("One finger: pan · Two fingers: pinch zoom with touch zoom enabled · Double-tap: reset. Scroll outside the graph to move down the page.")
     if st.button("Expand chart",use_container_width=True,key="shared_expand_chart"):
-        expanded_chart(fig,draft,plans,lines)
+        expanded_chart(fig,draft,plans,lines,touch_zoom)
     community_key(draft,plans,lines)
     if diagnostics:
         with st.expander(f"Model and coverage notes ({len(diagnostics)})"):
