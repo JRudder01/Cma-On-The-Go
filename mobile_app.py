@@ -312,7 +312,7 @@ def project_view():
             "sf": 0, "price": 0,
         }
         st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
-        st.success("Subject name and competitor IDs copied. Open Quick Scan to review sizes, prices and geography.")
+        st.rerun()
 
     st.write("**Saved target market areas**")
     if not areas:
@@ -339,7 +339,7 @@ def project_view():
                         "sf": 0, "price": 0,
                     }
                     st.session_state["project_comm_ids"] = [int(v) for v in competitors if str(v).isdigit()]
-                    st.success("TMA settings copied. Open Quick Scan to review and run the MLS-only analysis.")
+                    st.rerun()
                 except Exception as exc:
                     st.error(str(exc))
     st.info("Saved desktop analyses are reference snapshots. Quick Scan rebuilds a new result from currently available canonical MLS records; it does not reproduce custom MLS data, saved outlier edits, or historical pricing results.")
