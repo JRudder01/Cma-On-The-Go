@@ -6,6 +6,7 @@ textColor = "#142238"
 font = "sans serif"
 
 [server]
+enableWebsocketCompression = false
 maxUploadSize = 1
 
 [client]
