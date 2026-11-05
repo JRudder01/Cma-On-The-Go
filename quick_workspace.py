@@ -35,7 +35,7 @@ def subject_price_player(plans, signature):
         products=[p for p in result.get("products",[]) if p in models]
         choice=st.selectbox("Reference trendline",products,
             format_func=lambda p:f"{result['name']} · {p}",key="unified_player_category")
-        offset=st.slider("Price relative to trend (%)",-25,25,0,1,key="unified_player_percent")
+        offset=st.number_input("Price relative to trend (%)",min_value=-25,max_value=25,value=0,step=1,key="unified_player_percent",help="Enter a whole-number percentage from -25 to +25; negative values price below the selected TMA trendline.")
         model=models[choice]
         st.session_state["unified_price_player_reference"]=choice
         st.caption(f"Supported range: {model['sf_min']:,.0f}–{model['sf_max']:,.0f} SF "
