@@ -513,7 +513,7 @@ def render_analysis(series: list[dict], draft: dict, plans: list[dict], *, scope
         st.warning("No eligible market series were loaded. See TMA coverage notes above.")
         return
     st.caption(f"{scope} · {len(series)} TMA market series · warehouse read-only")
-    metric=st.radio("Chart",["Price/SF","Price","Payment","Inventory"],horizontal=True,
+    metric=st.radio("Chart",["Price","Payment","Price/SF","Inventory"],horizontal=True,
                     key="shared_market_metric")
     rate=6.5;down=20.
     if metric=="Payment":
