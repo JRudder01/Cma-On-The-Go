@@ -90,7 +90,9 @@ def test_quick_scan_all_categories_with_competitor_and_price_player_no_repeat_db
     # Price Player should reuse the same TMA records when changing assumptions.
     choice=next(v for v in a.selectbox if v.label=="Reference trendline")
     choice.set_value("Attached").run()
-    next(v for v in a.slider if v.label=="Price relative to trend (%)").set_value(5).run()
+    percent=next(v for v in a.number_input if v.label=="Price relative to trend (%)")
+    assert percent.value==0
+    percent.set_value(5).run()
     assert len(observed)==1
     btn=next(v for v in a.button if v.label.startswith("Apply suggested prices"))
     assert not btn.disabled
@@ -101,7 +103,9 @@ def test_quick_scan_all_categories_with_competitor_and_price_player_no_repeat_db
     assert draft["applied_pricing_reference"]["product"]=="Attached"
     assert draft["applied_pricing_reference"]["percent"]==5
     assert len(observed)==1
-    for metric in ("Price","Payment","Inventory","Price/SF"):
+    chart=next(v for v in a.radio if v.label=="Chart")
+    assert list(chart.options)==["Price","Payment","Price/SF","Inventory"]
+    for metric in ("Price","Payment","Price/SF","Inventory"):
         next(v for v in a.radio if v.label=="Chart").set_value(metric).run()
         _error_free(a)
         assert len(observed)==1
